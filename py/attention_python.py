@@ -11,6 +11,9 @@ def simple_self_attention(inputs, W_q, W_k, W_v, dk):
     attention_scores = torch.matmul(query, key.transpose(-2, -1))
     attention_scores = attention_scores / torch.sqrt(torch.tensor(dk).float())
 
+    # apply casual mask
+    attention_scores = attention_scores.masked_fill(torch.tril(torch.ones((inputs.shape[0],inputs.shape[0]))) == 0, float('-inf'))
+
     # Apply softmax to get attention weights
     attention_weights = torch.softmax(attention_scores, dim=-1)
 

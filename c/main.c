@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define MAX_DATA 1000 // Define the maximum number of data points
 
@@ -58,7 +59,11 @@ int main(int argc, char *argv[]) {
 
     fclose(inputFile);
 
+    clock_t start = clock();
     attention(inputs, n_inputs, dk, outputs, Wq, Wk, Wv);
+    clock_t end = clock();
+    float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+    printf("Time taken by C code: %f seconds\n", seconds);
 
     // Open the output file for writing
     outputFile = fopen(argv[2], "wb");

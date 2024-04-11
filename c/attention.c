@@ -6,6 +6,8 @@ void attention(float** input, int num_inputs, int dk, float** output, float** Wq
 void matmul(float** A, float** B, float** C, int m, int n, int p);
 void transpose(float** input, float** output, int m, int n);
 void softmax(float* input, int size);
+void casual_mask(float** matrix, int n);
+
 
 // Function to calculate attention
 void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv) {
@@ -45,6 +47,9 @@ void attention(float** input, int num_inputs, int dk, float** output, float** Wq
             attn_scores[i][j] = attn_scores[i][j] / dk_sqrt;
         }
     }
+
+    // apply the casual mask
+    casual_mask(attn_scores, num_inputs);
 
     // Softmax the attention scores for each 
     for (int i = 0; i < num_inputs; i++) {
