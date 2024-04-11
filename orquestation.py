@@ -18,7 +18,7 @@ C_PATH = "./c/"
 # add path to the files
 FILES_COMPILE = [C_PATH + file for file in FILES_COMPILE]
 
-output_file = "main"
+output_file = "./bin/main"
 data_input = "./data/inputs.txt"
 data_output = "./data/outputs.txt"
 
@@ -52,7 +52,7 @@ command = "nvcc -o " + str(output_file) + " " + " ".join(FILES_COMPILE)
 os.system(command)
 
 # run the compiled program
-os.system('./' + str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk))
+os.system(str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk))
 
 output_c = readfromfile(data_output, dk, n_tokens)
 
