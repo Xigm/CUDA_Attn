@@ -1,8 +1,9 @@
 #include <math.h>
 
-void softmax(double* input, int size) {
-    double max_val = input[0];
-    double sum = 0.0;
+void softmax(float* input, int size) {
+
+    float max_val = input[0];
+    float sum = 0.0;
 
     // Find the maximum value in the input array
     for (int i = 1; i < size; i++) {
