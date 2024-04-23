@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "math.h": "c"
+        "math.h": "c",
+        "attention.cuh": "c",
+        "attention.h": "c",
+        "attention.cu": "c"
     }
 }

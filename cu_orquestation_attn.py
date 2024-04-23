@@ -5,13 +5,8 @@ import os
 import time
 
 FILES_COMPILE = [ 
-                  'attention_tests.c',
-                  'matmul.cu',
-                  'softmax.c',
-                  'main.c',
-                  'casual_mask.c',
-                  'transpose.c',
-                  ]
+                  'main.cu',
+                ]
 
 C_PATH = "./c/"
 CU_PATH = "./cuda/"
