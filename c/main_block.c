@@ -4,7 +4,7 @@
 
 #define MAX_DATA 1000 // Define the maximum number of data points
 
-void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv, float** W_cproj);
+void transformerBlock(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv, float** W_cproj, float** W_li, float** W_lo);
 
 void readMatrix(FILE *file, float **matrix, int rows, int cols) {
     for (int i = 0; i < rows; i++) {
@@ -17,7 +17,7 @@ void readMatrix(FILE *file, float **matrix, int rows, int cols) {
 int main(int argc, char *argv[]) {
     FILE *inputFile, *outputFile;	// File pointers
     int n_inputs, dk;
-    float **inputs, **Wq, **Wk, **Wv, **W_cproj, **outputs;
+    float **inputs, **Wq, **Wk, **Wv, **W_cproj, **W_li, **W_lo, **outputs;
 
     if (argc < 5) {
         fprintf(stderr, "Usage: %s <input file> <output file> <n_inputs> <dk>\n", argv[0]);
@@ -39,6 +39,8 @@ int main(int argc, char *argv[]) {
     Wk = (float **)malloc(dk * sizeof(float *));
     Wv = (float **)malloc(dk * sizeof(float *));
     W_cproj = (float **)malloc(dk * sizeof(float *));
+    W_li = (float **)malloc(dk * sizeof(float *));
+    W_lo = (float **)malloc(4 * dk * sizeof(float *));
     outputs = (float **)malloc(n_inputs * sizeof(float *));
 
     for (int i = 0; i < n_inputs; i++) {
@@ -51,7 +53,14 @@ int main(int argc, char *argv[]) {
         Wk[i] = (float *)malloc(dk * sizeof(float));
         Wv[i] = (float *)malloc(dk * sizeof(float));
         W_cproj[i] = (float *)malloc(dk * sizeof(float));
+        W_lo[i] = (float *)malloc(dk * sizeof(float));
+
+        for (int j = 0; j < 4; j++) {
+            W_li[i*j + j] = (float *)malloc(dk * sizeof(float));
+        }
     }
+
+
 
     // Load the matrices
     readMatrix(inputFile, inputs, n_inputs, dk);
@@ -59,11 +68,13 @@ int main(int argc, char *argv[]) {
     readMatrix(inputFile, Wk, dk, dk);
     readMatrix(inputFile, Wv, dk, dk);
     readMatrix(inputFile, W_cproj, dk, dk);
+    readMatrix(inputFile, W_li, dk, dk*4);
+    readMatrix(inputFile, W_lo, dk*4, dk);
 
     fclose(inputFile);
 
     clock_t start = clock();
-    attention(inputs, n_inputs, dk, outputs, Wq, Wk, Wv, W_cproj);
+    transformerBlock(inputs, n_inputs, dk, outputs, Wq, Wk, Wv, W_cproj, W_li, W_lo);
     clock_t end = clock();
     float seconds = (float)(end - start) / CLOCKS_PER_SEC;
     printf("Time taken by C code: %f seconds\n", seconds);

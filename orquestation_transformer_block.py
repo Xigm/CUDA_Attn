@@ -1,4 +1,4 @@
-from py.attention_python import simple_self_attention
+from py.t_block_python import simple_attention_block
 from py.utils import write2file, readfromfile
 import torch
 import os
@@ -8,9 +8,13 @@ FILES_COMPILE = [
                   'attention.c',
                   'matmul.c',
                   'softmax.c',
-                  'main.c',
+                  'main_block.c',
                   'casual_mask.c',
                   'transpose.c',
+                  'mlp.c',
+                  'gelu.c',
+                  'layer_norm.c',
+                  'block.c'
                   ]
 
 C_PATH = "./c/"
@@ -22,9 +26,9 @@ output_file = "./bin/main"
 data_input = "./data/inputs.txt"
 data_output = "./data/outputs.txt"
 
-dk = 256
-n_tokens = 30
-n_heads = 32
+dk = 8
+n_tokens = 2
+n_heads = 2
 head_dim = dk // n_heads
 
 torch.manual_seed(2024)
@@ -36,13 +40,18 @@ inputs = torch.randint(0, 10,(n_tokens, dk), dtype=torch.float32)
 W_q = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
 W_k = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
 W_v = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
+W_cproj = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
+W_li = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
+W_lo = torch.randint(0, 10, (dk, dk), dtype=torch.float32)
+
+weights = [inputs, W_q, W_k, W_v, W_cproj, W_li, W_lo]
 
 # write data
-write2file(data_input, inputs, W_q, W_k, W_v, dk, n_tokens)
+write2file(data_input, weights, dk, n_tokens)
 
 # call the function
 time_start = time.time()
-output_py = simple_self_attention(inputs, W_q, W_k, W_v, dk)
+output_py = simple_attention_block(inputs, W_q, W_k, W_v, W_cproj, W_li, W_lo, dk)
 time_taken = time.time() - time_start
 
 print("Time taken by python code: ", time_taken)

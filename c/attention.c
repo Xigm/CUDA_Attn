@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv);
+void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv, float **W_cproj);
 void matmul(float** A, float** B, float** C, int m, int n, int p);
 void transpose(float** input, float** output, int m, int n);
 void softmax(float* input, int size);
@@ -10,7 +10,7 @@ void casual_mask(float** matrix, int n);
 
 
 // Function to calculate attention
-void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv) {
+void attention(float** input, int num_inputs, int dk, float** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {
 
     // define query, key, value matrices
     float** Q = (float**)malloc(num_inputs * sizeof(float*));
@@ -57,7 +57,20 @@ void attention(float** input, int num_inputs, int dk, float** output, float** Wq
     }
 
     // Multiply the attention scores by the value matrix
-    matmul(attn_scores, V, output, num_inputs, num_inputs, dk);
+    matmul(attn_scores, V, input, num_inputs, num_inputs, dk);
 
+    // print output matrix
+    for (int i = 0; i < num_inputs; i++) {
+        for (int j = 0; j < dk; j++) {
+            printf("%f ", output[i][j]);
+        }
+        printf("\n");
+    }
+
+    // Project the output
+    matmul(input, W_cproj, output, num_inputs, dk, dk);
+
+    // print output matrix
+    
 
 }
