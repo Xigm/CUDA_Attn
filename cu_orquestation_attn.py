@@ -18,7 +18,7 @@ output_file = "./bin/main"
 data_input = "./data/inputs.txt"
 data_output = "./data/outputs.txt"
 
-dk = 8
+dk = 4
 n_tokens = 2
 n_heads = 2
 head_dim = dk // n_heads
@@ -46,8 +46,10 @@ time_taken = time.time() - time_start
 
 print("Time taken by python code: ", time_taken)
 
+warning_supression = " -diag-suppress 549"
+# warning_supression = ""
 # compile main.c with nvcc using os
-command = "nvcc -o " + str(output_file) + " " + " ".join(FILES_COMPILE)
+command = "nvcc -o " + str(output_file) + " " + " ".join(FILES_COMPILE) + warning_supression
 os.system(command)
 
 # run the compiled program
