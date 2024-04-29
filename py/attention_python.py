@@ -7,6 +7,8 @@ def simple_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk):
     key = torch.matmul(inputs, W_k)
     value = torch.matmul(inputs, W_v)
 
+    print(query[:3, :3])
+
     # Compute the attention scores
     attention_scores = torch.matmul(query, key.transpose(-2, -1))
     attention_scores = attention_scores / torch.sqrt(torch.tensor(dk).float())
@@ -16,14 +18,13 @@ def simple_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk):
 
     # Apply softmax to get attention weights
     attention_weights = torch.softmax(attention_scores, dim=-1)
+    # print(attention_weights)
 
     # Apply attention weights to the value tensor
     output = torch.matmul(attention_weights, value)
 
-    print(output)
     # Apply attention output projection
     output = torch.matmul(output, W_cproj)
-    print(output)
 
     # Print the result
     return output

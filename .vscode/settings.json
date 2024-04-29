@@ -3,6 +3,7 @@
         "math.h": "c",
         "attention.cuh": "c",
         "attention.h": "c",
-        "attention.cu": "c"
+        "attention.cu": "c",
+        "utils.cu": "c"
     }
 }

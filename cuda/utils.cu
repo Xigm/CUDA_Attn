@@ -20,6 +20,15 @@
     }                                                                               \
   }
 
+void unflattenMatrix(float* flattenedMatrix, int m, int n, float** matrix) {
+  for (int i = 0; i < m; i++) {
+    for (int j = 0; j < n; j++) {
+      matrix[i][j] = flattenedMatrix[i * n + j];
+    }
+  }
+}
+
+
 void flattenMatrix(float** matrix, int m, int n, float* flattenedMatrix) {
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
@@ -30,7 +39,7 @@ void flattenMatrix(float** matrix, int m, int n, float* flattenedMatrix) {
 }
 
 
-void loadMatrixToGPU(float** matrix, float* deviceMatrix, int m, int n) {
+void loadMatrixToGPU(float** matrix, float** deviceMatrix, int m, int n) {
     // Flatten the matrix
     float* flattenedMatrix = (float *)malloc(m * n * sizeof(float));
     flattenMatrix(matrix, m, n, flattenedMatrix);
@@ -38,7 +47,7 @@ void loadMatrixToGPU(float** matrix, float* deviceMatrix, int m, int n) {
     size_t size = n * m * sizeof(float);
 
     // Allocate memory on the GPU
-    cudaError_t err =  cudaMalloc((void**)&deviceMatrix, size);
+    cudaError_t err =  cudaMalloc((void**) deviceMatrix, size);
 
     if (err != cudaSuccess) {
         fprintf(stderr, "Failed to allocate device matrix: %s\n", cudaGetErrorString(err));
@@ -46,7 +55,7 @@ void loadMatrixToGPU(float** matrix, float* deviceMatrix, int m, int n) {
     }
 
     // Copy the flattened matrix from host to device
-    cudaMemcpy(deviceMatrix, flattenedMatrix, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(*deviceMatrix, flattenedMatrix, size, cudaMemcpyHostToDevice);
 
 
 }

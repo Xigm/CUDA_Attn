@@ -50,6 +50,8 @@ int main() {
 
     // Allocate device memory
     float* d_A, *d_B, *d_C;
+    float** p_d_A = &d_A;
+    float** p_d_B = &d_B;
     // cudaMalloc((void**)&d_A, 2 * 4 * sizeof(float));
     // cudaMalloc((void**)&d_B, 4 * 4 * sizeof(float));
     cudaMalloc((void**)&d_C, 4 * 2 * sizeof(float));
@@ -58,24 +60,24 @@ int main() {
     // cudaMemcpy(d_A, A, 2 * 4 * sizeof(float), cudaMemcpyHostToDevice);
     // cudaMemcpy(d_B, B, 4 * 4 * sizeof(float), cudaMemcpyHostToDevice);
 
-    loadMatrixToGPU(A2, d_A, 2, 4);
-    loadMatrixToGPU(B2, d_B, 4, 4);
+    loadMatrixToGPU(A2, p_d_A, 2, 4);
+    loadMatrixToGPU(B2, p_d_B, 4, 4);
 
-    float* flattenedMatrix = (float *)malloc(4 * 2 * sizeof(float));
-    flattenMatrix(A2, 2,4, flattenedMatrix);
-    size_t size = 8 * sizeof(float);
-    // Allocate memory on the GPU
-    cudaMalloc((void**)&d_A, size);
-    // Copy the flattened matrix from host to device
-    cudaMemcpy(d_A, flattenedMatrix, size, cudaMemcpyHostToDevice);
+    // float* flattenedMatrix = (float *)malloc(4 * 2 * sizeof(float));
+    // flattenMatrix(A2, 2,4, flattenedMatrix);
+    // size_t size = 8 * sizeof(float);
+    // // Allocate memory on the GPU
+    // cudaMalloc((void**)&d_A, size);
+    // // Copy the flattened matrix from host to device
+    // cudaMemcpy(d_A, flattenedMatrix, size, cudaMemcpyHostToDevice);
 
-    flattenedMatrix = (float *)malloc(4 * 4 * sizeof(float));
-    flattenMatrix(B2, 4,4, flattenedMatrix);
-    size = 16 * sizeof(float);
-    // Allocate memory on the GPU
-    cudaMalloc((void**)&d_B, size);
-    // Copy the flattened matrix from host to device
-    cudaMemcpy(d_B, flattenedMatrix, size, cudaMemcpyHostToDevice);
+    // flattenedMatrix = (float *)malloc(4 * 4 * sizeof(float));
+    // flattenMatrix(B2, 4,4, flattenedMatrix);
+    // size = 16 * sizeof(float);
+    // // Allocate memory on the GPU
+    // cudaMalloc((void**)&d_B, size);
+    // // Copy the flattened matrix from host to device
+    // cudaMemcpy(d_B, flattenedMatrix, size, cudaMemcpyHostToDevice);
 
 
 
