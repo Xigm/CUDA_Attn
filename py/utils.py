@@ -1,19 +1,38 @@
 import torch
 
-def write2file(path, weights, dk, n_tokens):
+def write2file(path, weights, dk, n_tokens, batch_size):
     with open(path, "w") as f:
-        string2write = prepare_string_V2(weights, dk, n_tokens)
+        string2write = prepare_string_V2(weights, dk, n_tokens, batch_size)
         f.write(string2write)
 
-def readfromfile(path, dk, n_tokens):
-    outputs = torch.zeros(n_tokens, dk)
+def readfromfile(path, dk, n_tokens, batch_size = None):
+    if batch_size is None:
+        outputs = torch.zeros(n_tokens, dk)
 
-    with open(path, "r") as f:
-        for i in range(n_tokens):
-            for j in range(dk):
-                outputs[i][j] = float(f.readline())
+        with open(path, "r") as f:
+            for i in range(n_tokens):
+                for j in range(dk):
+                    outputs[i][j] = float(f.readline())
+
+            time_taken = float(f.readline())
+            
+        return outputs, time_taken
+    
+    else:
+        outputs = torch.zeros(batch_size, n_tokens, dk)
+
+        with open(path, "r") as f:
+            for k in range(batch_size):
+                for i in range(n_tokens):
+                    for j in range(dk):
+                        outputs[k][i][j] = float(f.readline())
+
+            time_taken = float(f.readline())
+            
+        return outputs, time_taken
         
-    return outputs
+
+
 
 def prepare_string(weights, dk, n_tokens):
     string2write = ""
@@ -64,11 +83,17 @@ def prepare_string(weights, dk, n_tokens):
 def format_matrix(matrix, rows, cols):
     return '\n'.join(' '.join(str(matrix[i][j].item()) for j in range(cols)) for i in range(rows))
 
+def format_matrix_batch(matrix, rows, cols, batch_size):
+    # ERROR HERE
+    return '\n'.join(' '.join(str(matrix[k][i][j].item()) for j in range(cols)) for k in range(batch_size) for i in range(rows))
 
-def prepare_string_V2(weights, dk, n_tokens):
+def prepare_string_V2(weights, dk, n_tokens, batch_size):
 
     # Prepare string with initial weights
-    result = format_matrix(weights[0], n_tokens, dk) + '\n'
+    if batch_size is None:
+        result = format_matrix(weights[0], n_tokens, dk) + '\n'
+    else:
+        result = format_matrix_batch(weights[0], n_tokens, dk, batch_size) + '\n'
 
     # Format and append additional weights matrices
     for i in range(1,5):
@@ -80,3 +105,4 @@ def prepare_string_V2(weights, dk, n_tokens):
         result += format_matrix(weights[6], dk*4, dk) + '\n'
     
     return result
+

@@ -4,6 +4,7 @@
         "attention.cuh": "c",
         "attention.h": "c",
         "attention.cu": "c",
-        "utils.cu": "c"
+        "utils.cu": "c",
+        "random": "c"
     }
 }

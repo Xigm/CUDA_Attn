@@ -85,6 +85,7 @@ int main(int argc, char *argv[]) {
 
     // Process and write the content of inputs in the output file
     int count = 0;
+    printf("%d %d\n", n_inputs, dk);
     for (int i = 0; i < n_inputs; i++) {
         for (int j = 0; j < dk; j++) {
             fprintf(outputFile, "%f ", outputs[i][j]);
@@ -93,6 +94,9 @@ int main(int argc, char *argv[]) {
         }
         
     }
+
+    // append the time taken to the output file
+    fprintf(outputFile, "%f\n", seconds);
 
     // Close the file
     fclose(outputFile);
