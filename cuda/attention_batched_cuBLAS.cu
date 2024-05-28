@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include "utils.cu"
+#include "cublas_v2.h"
 #define CUDART_INF_F            __int_as_float(0x7f800000)
 
 /* Atomic operations for floating point numbers 
@@ -71,6 +72,28 @@ __device__ inline void atomicExp(float *address) {
     kernel_divide: kernel to divide each element by the sum of exponentials
     
 */
+
+__global__ void matmul_cuBLAS(cublasHandle_t handle,
+                           cublasOperation_t transa, 
+                           cublasOperation_t transb,
+                           int m, int n, int k,
+                           const float *alpha, 
+                           const float *const Aarray[], int lda,
+                           const float *const Barray[], int ldb,
+                           const float *beta,
+                           float *const Carray[], int ldc, 
+                           int batchCount) {
+
+
+    cublasStatus_t cublasSgemmBatched(handle, transa, transb,
+                                        m, n, k,
+                                        alpha, Aarray, lda, 
+                                        Barray, ldb, beta,
+                                        Carray, ldc,
+                                        batchCount);
+
+
+}
 
 __global__ void matmul_kernel_batched(float* A, float* B, float* C, int m, int n, int p, int batch_size) {
     int y = blockIdx.y * blockDim.y + threadIdx.y;    
@@ -276,11 +299,10 @@ __global__ void kernel_substract(float * z, float val, int num_inputs, int batch
 void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid, dim3 ks_exp_block) {
 
     // added for numerical stability, substract 100
-    kernel_substract<<<ks_exp_grid, ks_exp_block>>>(input, (float) 1000, num_inputs, batch_size);
+    kernel_substract<<<ks_exp_grid, ks_exp_block>>>(input, (float) 10, num_inputs, batch_size);
 
     // Print input array
     // print_from_GPU(input, num_inputs, num_inputs, batch_size);
-    
     // write values of input into a file called ./data/degub_softmax.txt 
     FILE* file = fopen("./data/debug_softmax.txt", "w");
     if (file != NULL) {
@@ -298,10 +320,8 @@ void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid,
     // exponentiate all elements
     kernel_exp<<<ks_exp_grid, ks_exp_block>>>(input, num_inputs, batch_size);
 
-
-
     // // Print input array
-    print_from_GPU(input, num_inputs, num_inputs, batch_size);
+    // print_from_GPU(input, num_inputs, num_inputs, batch_size);
 
     // sum all elements from a row
     float *sum;
@@ -425,6 +445,7 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     // print_from_GPU(Q, num_inputs, dk, batch_size);
 
 
+
     // launch the matrix multiplication kernel Q * K^T
     // dim3 attn_grid_dim(num_inputs,num_inputs);
     int d = 32;
@@ -473,7 +494,6 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
 
     // print attn matrix
     // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
-
 
     // launch the matrix multiplication kernel for attn * V
     matmul_kernel_batched<<<gridDim, blockDim_d_q_mod>>>(attn, V, d_output, num_inputs, num_inputs, dk, batch_size);

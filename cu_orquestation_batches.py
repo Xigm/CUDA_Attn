@@ -22,11 +22,11 @@ data_output = "./data/outputs_batches.txt"
 # n_tokens = 32*1
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
-dk = 32 * 8
-n_tokens = 32 * 8
+dk = 32
+n_tokens = 32 
 n_heads = 2
 head_dim = dk // n_heads
-batch_size = 32 
+batch_size = 32
 
 torch.manual_seed(2026)
 
@@ -34,10 +34,37 @@ torch.manual_seed(2026)
 inputs = torch.randn((batch_size, n_tokens, dk), dtype=torch.float32)
 
 # define the query, key, and value projection matrices
-W_q = torch.randn((dk, dk), dtype=torch.float32)*0.1
-W_k = torch.randn((dk, dk), dtype=torch.float32)*0.1
-W_v = torch.randn((dk, dk), dtype=torch.float32)*0.1
-W_cproj = torch.randn((dk, dk), dtype=torch.float32)*0.1
+W_q = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_q = W_q*torch.abs(W_q)
+W_k = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_k = W_k*torch.abs(W_k)
+W_v = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_v = W_v*torch.abs(W_v)
+W_cproj = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_cproj = W_cproj*torch.abs(W_cproj)
+
+import matplotlib.pyplot as plt
+
+# Plot the probability distributions of the weight matrices
+fig, axs = plt.subplots(2, 2, figsize=(10, 8))
+axs[0, 0].hist(W_q.flatten().cpu().numpy(), bins=50, density=True)
+axs[0, 0].set_title('W_q')
+axs[0, 1].hist(W_k.flatten().cpu().numpy(), bins=50, density=True)
+axs[0, 1].set_title('W_k')
+axs[1, 0].hist(W_v.flatten().cpu().numpy(), bins=50, density=True)
+axs[1, 0].set_title('W_v')
+axs[1, 1].hist(W_cproj.flatten().cpu().numpy(), bins=50, density=True)
+axs[1, 1].set_title('W_cproj')
+
+plt.tight_layout()
+plt.savefig("./results/weights_distributions.png")
+
+# print max of weights
+print("Max of W_q: ", W_q.max().item())
+print("Max of W_k: ", W_k.max().item())
+print("Max of W_v: ", W_v.max().item())
+print("Max of W_cproj: ", W_cproj.max().item())
+
 
 weights = [inputs, W_q, W_k, W_v, W_cproj]
 

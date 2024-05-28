@@ -5,7 +5,12 @@ def write2file(path, weights, dk, n_tokens, batch_size):
         string2write = prepare_string_V2(weights, dk, n_tokens, batch_size)
         f.write(string2write)
 
-def readfromfile(path, dk, n_tokens, batch_size = None):
+def write2file_sm(data_input, weights, n_tokens, batch_size, n_heads):
+    with open(data_input, "w") as f:
+        string2write = prepare_string_sm(weights, n_tokens, batch_size, n_heads)
+        f.write(string2write)
+
+def readfromfile(path, dk, n_tokens, batch_size = None, n_heads = None):
     if batch_size is None:
         outputs = torch.zeros(n_tokens, dk)
 
@@ -19,15 +24,29 @@ def readfromfile(path, dk, n_tokens, batch_size = None):
         return outputs, time_taken
     
     else:
-        outputs = torch.zeros(batch_size, n_tokens, dk)
+        if n_heads is None:
+            outputs = torch.zeros(batch_size, n_tokens, dk)
 
-        with open(path, "r") as f:
-            for k in range(batch_size):
-                for i in range(n_tokens):
-                    for j in range(dk):
-                        outputs[k][i][j] = float(f.readline())
+            with open(path, "r") as f:
+                for k in range(batch_size):
+                    for i in range(n_tokens):
+                        for j in range(dk):
+                            outputs[k][i][j] = float(f.readline())
 
-            time_taken = float(f.readline())
+                time_taken = float(f.readline())
+
+        else:
+            outputs = torch.zeros(batch_size, n_heads, n_tokens, n_tokens)
+
+            with open(path, "r") as f:
+                for k in range(batch_size):
+                    for h in range(n_heads):
+                        for i in range(n_tokens):
+                            for j in range(n_tokens):
+                                outputs[k][h][i][j] = float(f.readline())
+
+                time_taken = float(f.readline())
+
             
         return outputs, time_taken
         
@@ -103,6 +122,12 @@ def prepare_string_V2(weights, dk, n_tokens, batch_size):
         result += format_matrix(weights[4], dk, dk) + '\n'
         result += format_matrix(weights[5], dk, dk*4) + '\n'
         result += format_matrix(weights[6], dk*4, dk) + '\n'
+    
+    return result
+
+def prepare_string_sm(weights, n_tokens, batch_size, n_heads):
+
+    result = '\n'.join(' '.join(str(weights[k][n][i][j].item()) for j in range(n_tokens)) for k in range(batch_size) for n in range(n_heads) for i in range(n_tokens)) + '\n'
     
     return result
 
