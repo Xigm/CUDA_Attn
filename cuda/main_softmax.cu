@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
     printf("Computing softmax\n");
 
     clock_t start = clock();
-    softmax(inputs, n_inputs, batch_size, n_heads, outputs);
+    double cpu_time_used = softmax(inputs, n_inputs, batch_size, n_heads, outputs);
     clock_t end = clock();
     float seconds = (float)(end - start) / CLOCKS_PER_SEC;
     printf("Time taken by C code: %f seconds\n", seconds);
@@ -121,6 +121,7 @@ int main(int argc, char *argv[]) {
 
     // append the time taken to the output file
     fprintf(outputFile, "%f\n", seconds);
+    fprintf(outputFile, "%f\n", (float) cpu_time_used);
 
     // Close the file
     fclose(outputFile);

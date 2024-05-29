@@ -6,6 +6,7 @@
 #include <math.h>
 
 #include "utils.cu"
+#include "softmax.cu"
 #define CUDART_INF_F            __int_as_float(0x7f800000)
 
 
@@ -56,6 +57,15 @@ __device__ inline void atomicExp(float *address) {
     } while (assumed != old);
 }
 
+__device__ inline void atomicSet(float *address, float value) {
+    int *address_as_i = (int*) address;
+    int old = *address_as_i, assumed;
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_i, assumed,
+                        value);
+    } while (assumed != old);
+}
 
 /* Kernel functions 
 
@@ -183,6 +193,19 @@ __global__ void masked_fill(float* A, int m, int n, int batch_size) {
     if (row < m && col < n && z < batch_size) {
         if (row < col) {
             A[z * m * n + row * n + col] = -CUDART_INF_F;
+        }
+    }
+}
+
+// kernel to fill the upper triangular matrix with -inf
+__global__ void masked_fill_atomic(float* A, int m, int n, int batch_size) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (row < m && col < n && z < batch_size) {
+        if (row < col) {
+            atomicSet(&A[z * m * n + row * n + col], -CUDART_INF_F);
         }
     }
 }
@@ -467,9 +490,20 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     // print attn matrix
     // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
 
+    int vecs_per_block = num_inputs;
+    if (num_inputs * num_inputs > 1024) {
+        vecs_per_block = 1024/num_inputs;
+    }
+
+    dim3 block_dims(num_inputs, vecs_per_block);
+    dim3 grid_dims(batch_size, n_heads, (num_inputs-1)/vecs_per_block + 1);
+
+    int tokens_power_2_half = next_power_of_2(num_inputs)/2;
+
     // launch the kernel for softmaxing the attn matrix
     // softmax<<<num_inputs, num_inputs>>>(attn, num_inputs, num_inputs);
-    softmax_mig(attn, num_inputs, batch_size, attn_gridDim, attn_block_dim);
+    // softmax_mig(attn, num_inputs, batch_size, attn_gridDim, attn_block_dim);
+    softmax_kernel<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(input, n_tokens, batch_size, n_heads, vecs_per_block, next_token_2_half);
     CHECK_KERNELCALL();
 
     // print attn matrix

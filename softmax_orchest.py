@@ -24,15 +24,16 @@ data_output = "./data/outputs_sm.txt"
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
 dk = 1024
-n_tokens = 2
-n_heads = 12
+n_tokens = 722
+n_heads = 1
 head_dim = dk // n_heads
-batch_size = 2
+batch_size = 1
 
 # torch.manual_seed(2026)
 
 # define the input tensor
 inputs = torch.randn((batch_size, n_heads, n_tokens, n_tokens), dtype=torch.float32).masked_fill(torch.tril(torch.ones((n_tokens, n_tokens))) == 0, float('-inf'))
+inputs[0,0,-1,-1] = 2
 
 weights = inputs
 
@@ -48,8 +49,10 @@ time_taken = time.time() - time_start
 inputs_c = inputs.cuda()
 
 time_start = time.time()
-output_py_gpu = torch.nn.functional.softmax(inputs, dim = -1)
+output_py_gpu = torch.nn.functional.softmax(inputs_c, dim = -1)
 time_taken_gpu = time.time() - time_start
+
+del inputs_c
 
 print("Time taken by python code: ", time_taken)
 print("Time taken by py-cuda code: ", time_taken_gpu)
@@ -63,7 +66,7 @@ os.system(command)
 # run the compiled program
 os.system(str(output_file) + ' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(n_heads) + ' ' + str(batch_size))
 
-output_c, time_taken = readfromfile(data_output, n_tokens, n_tokens, batch_size, n_heads)
+output_c, time_taken, time_taken_k = readfromfile(data_output, n_tokens, n_tokens, batch_size, n_heads)
 
 # compare the results if output_py and output_c are the same and print true if they are
 if torch.allclose(output_py, output_c, atol=1e-04):
@@ -74,5 +77,7 @@ else:
 # compute tolerance
 tolerance = (output_py - output_c).abs().max().item()
 print("Tolerance: ", tolerance)
+
+
 
 

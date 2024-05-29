@@ -20,8 +20,9 @@ def readfromfile(path, dk, n_tokens, batch_size = None, n_heads = None):
                     outputs[i][j] = float(f.readline())
 
             time_taken = float(f.readline())
+            time_taken_k = float(f.readline())
             
-        return outputs, time_taken
+        return outputs, time_taken, time_taken_k
     
     else:
         if n_heads is None:
@@ -34,6 +35,7 @@ def readfromfile(path, dk, n_tokens, batch_size = None, n_heads = None):
                             outputs[k][i][j] = float(f.readline())
 
                 time_taken = float(f.readline())
+                time_taken_k = float(f.readline())
 
         else:
             outputs = torch.zeros(batch_size, n_heads, n_tokens, n_tokens)
@@ -46,9 +48,10 @@ def readfromfile(path, dk, n_tokens, batch_size = None, n_heads = None):
                                 outputs[k][h][i][j] = float(f.readline())
 
                 time_taken = float(f.readline())
+                time_taken_k = float(f.readline())
 
             
-        return outputs, time_taken
+        return outputs, time_taken, time_taken_k
         
 
 
