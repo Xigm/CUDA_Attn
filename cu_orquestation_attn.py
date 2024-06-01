@@ -23,8 +23,8 @@ data_output = "./data/outputs.txt"
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
 dk = 768
-n_tokens = 256
-n_heads = 2
+n_tokens = 64
+n_heads = 12
 head_dim = dk // n_heads
 
 # torch.manual_seed(2026)

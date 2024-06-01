@@ -16,56 +16,22 @@
 
 */
 
-__device__ inline void atomicDivide(float *address, float val) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        __float_as_int(__int_as_float(assumed) / val));
-    } while (assumed != old);
-}
-
-__device__ inline void atomicSubstract(float *address, float val) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        __float_as_int(__int_as_float(assumed) - val));
-    } while (assumed != old);
-}
-
-__device__ inline void atomicMaxfloat(float *address, float val) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        __float_as_int(fmaxf(val, __int_as_float(assumed))));
-    } while (assumed != old);
-}
-
-
-__device__ inline void atomicExp(float *address) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        __float_as_int(expf(__int_as_float(assumed))));
-    } while (assumed != old);
-}
+// __device__ inline void atomicSet(float *address, float value) {
+//     int *address_as_i = (int*) address;
+//     int old = *address_as_i, assumed;
+//     do {
+//         assumed = old;
+//         old = atomicCAS(address_as_i, assumed,
+//                         value);
+//     } while (assumed != old);
+// }
 
 __device__ inline void atomicSet(float *address, float value) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        value);
-    } while (assumed != old);
+    unsigned int *address_as_ui = (unsigned int*)address;
+    unsigned int value_as_ui = __float_as_uint(value);
+    atomicExch(address_as_ui, value_as_ui);
 }
+
 
 /* Kernel functions 
 
@@ -161,6 +127,67 @@ __global__ void matmul_kernel_transposed_batched(float* A, float* B, float* C, i
     }
 }
 
+__global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m, int n, int n_heads, int batch_size) {
+
+    // inputs per block is the number of inputs per block, which is the number of rows of the matrix
+    // inputs_per_block = 1024 / m
+
+    int x = threadIdx.x;
+    int y = threadIdx.y;
+    int b = blockIdx.x;
+    int h = blockIdx.y;
+
+    if (x < m && y < m && b < batch_size && h < n_heads) {
+
+        float sum = 0.0f;
+        for (int k = 0; k < n; k++) {
+            sum += A[b * m * n * n_heads + h * n + y * n * n_heads + k] * B[b * m * n * n_heads + h * n + x * n * n_heads + k];
+        }
+
+        C[b * m * m * n_heads + h * m * m + m * y + x] = sum;
+        // printf("Sum %f, in position %d to the matrix value %f\n",sum, b * m * m * n_heads + h * m * m + m * y + x, C[b * m * m * n_heads + h * m * m + m * y + x]);
+    }
+
+}
+
+__global__ void matmul_kernel_semibatched_MH(float* A, float* B, float* C, int m, int n, int p, int batch_size) {
+    // TODO
+}
+
+__global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int n_heads, int batch_size, int head_size) {
+    
+    // inputs per block is the number of inputs per block, which is the number of rows of the matrix
+    // inputs_per_block = 1024 / m
+
+    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    int b = blockIdx.z;
+
+    int head = x / head_size;
+
+    // int dk = n_heads * head_size;
+    if (x < n_heads*head_size && y < m && b < batch_size) {
+
+        float sum = 0.0f;
+        for (int k = 0; k < m ; k++) {
+            
+
+            float a = A[b * m * m * n_heads + y * m + k + head * m * m];
+            float bb =  B[b * m * n + x + k * n_heads * head_size];
+            sum += a * bb;
+
+
+            // if (x == 0 && y == 1 && b == 0) {
+            //     printf("A %f, B %f \n", a, bb);
+            // }
+        }
+
+        C[b * m * n + n * y + x] = sum;
+        // printf("Sum %f, in position %d the matrix value %f\n",sum, b * m * n + n * y + x, C[b * m * n + n * y + x]);
+    }
+}
+
+
 // kernel which performs divide by sqrt(dk)
 __global__ void normalize(float* A, int m, int n, int dk) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -173,80 +200,45 @@ __global__ void normalize(float* A, int m, int n, int dk) {
 
 }
 
-__global__ void normalize_atomic(float* A, int m, int n, int dk, int batch_size) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int z = blockIdx.z * blockDim.z + threadIdx.z;
+__global__ void normalize_atomic(float* A, int m, int n, float sqrt_dk, int batch_size, int n_heads) {
+    int y = threadIdx.y;
+    int x = threadIdx.x;
+    int b = blockIdx.x;
+    int h = blockIdx.y;
 
-    if (row < m && col < n && z < batch_size) {
-        atomicDivide(&A[z * m * n + row * n + col], sqrt((float) dk));
-    }
-
+    atomicDivide(&A[b * m * n * n_heads + h * m * n + y * n + x], sqrt_dk);
+    
 }
 
 // kernel to fill the upper triangular matrix with -inf
-__global__ void masked_fill(float* A, int m, int n, int batch_size) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int z = blockIdx.z * blockDim.z + threadIdx.z;
+// __global__ void masked_fill(float* A, int m, int n, int batch_size, int head_size) {
+//     int row = blockIdx.y * blockDim.y + threadIdx.y;
+//     int col = blockIdx.x * blockDim.x + threadIdx.x;
+//     int b = blockIdx.z;
+//     int h = blockIdx.z;
 
-    if (row < m && col < n && z < batch_size) {
-        if (row < col) {
-            A[z * m * n + row * n + col] = -CUDART_INF_F;
-        }
-    }
-}
+//     if (row < m && col < n && b < batch_size && h < n_heads) {
+//         if (row < col) {
+//             A[z * m * n + row * n + col] = -CUDART_INF_F;
+//         }
+//     }
+// }
 
 // kernel to fill the upper triangular matrix with -inf
-__global__ void masked_fill_atomic(float* A, int m, int n, int batch_size) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int z = blockIdx.z * blockDim.z + threadIdx.z;
+__global__ void masked_fill_atomic(float* A, int m, int n, int batch_size, int n_heads) {
+    int x = threadIdx.x;
+    int y = threadIdx.y;
+    int b =  blockIdx.x;
+    int h = blockIdx.y;
 
-    if (row < m && col < n && z < batch_size) {
-        if (row < col) {
-            atomicSet(&A[z * m * n + row * n + col], -CUDART_INF_F);
+
+    // if (x < m && y < n) {
+        if (y < x) {
+            atomicSet(&A[b * m * n * n_heads + h * m * n + y * n + x], -CUDART_INF_F);
         }
-    }
+    // }
 }
 
-
-__global__ void softmax(float *input, int rows, int cols) {
-    int row = blockIdx.x;  // Each block handles one row
-    int tid = threadIdx.x;
-    int idx = row * cols + tid;
-
-    if (tid >= cols) return;  // Safeguard against excess threads
-
-    // Step 1: Find max for numerical stability
-    extern __shared__ float shared[];
-    float *max_val = &shared[0];
-    float *exp_sum = &shared[1];
-    if (tid == 0) {
-        *max_val = input[idx];
-        *exp_sum = 0.0;
-    }
-    __syncthreads();
-
-    for (int i = tid; i < cols; i += blockDim.x) {
-        atomicMaxfloat(max_val, input[row * cols + i]);
-    }
-    __syncthreads();
-
-    // Step 2: Compute sum of exponentials
-    float sum_exp = 0.0;
-    for (int i = tid; i < cols; i += blockDim.x) {
-        sum_exp += expf(input[row * cols + i] - *max_val);
-    }
-
-    atomicAdd(exp_sum, sum_exp);
-    __syncthreads();
-
-    // Step 3: Calculate softmax output
-    for (int i = tid; i < cols; i += blockDim.x) {
-        input[row * cols + i] = expf(input[row * cols + i] - *max_val) / *exp_sum;
-    }
-}
 
 
 __global__ void kernel_exp(float * z, int num_inputs, int batch_size){
@@ -370,7 +362,11 @@ void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid,
 //     cudaFree(d_C);
 // }
 
-void attention(float*** input, int num_inputs, int dk, int batch_size, float*** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {
+double attention(float*** input, int num_inputs, int dk, int batch_size, int n_heads, float*** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {    
+    
+    clock_t start, end;
+    double gpu_time_used;
+
     // allocate device memory for inputs, outputs, weights, and intermediate results attn
     float* d_input, *d_output, *d_output_2, *d_Wq, *d_Wk, *d_Wv, *d_W_cproj, *attn, *Q, *K, *V;
     float ** p_d_input = &d_input;
@@ -379,6 +375,7 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     float ** p_d_Wv = &d_Wv;
     float ** p_d_W_cproj = &d_W_cproj;
 
+    int head_size = dk/n_heads;
 
     loadMatrixToGPU_batched(input, p_d_input, num_inputs, dk, batch_size);
     loadMatrixToGPU(Wq, p_d_Wq, dk, dk);
@@ -386,18 +383,24 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     loadMatrixToGPU(Wv, p_d_Wv, dk, dk);
     loadMatrixToGPU(W_cproj, p_d_W_cproj, dk, dk);
     
-    cudaMalloc(&attn, batch_size * num_inputs * num_inputs * sizeof(float));
     cudaMalloc(&Q, batch_size * num_inputs * dk * sizeof(float));
     cudaMalloc(&K, batch_size * num_inputs * dk * sizeof(float));
     cudaMalloc(&V, batch_size * num_inputs * dk * sizeof(float));
     cudaMalloc(&d_output, batch_size * num_inputs * dk * sizeof(float));
     cudaMalloc(&d_output_2, batch_size * num_inputs * dk * sizeof(float));
 
+    // CAREFUL: This is MHA, then size is batch x n_heads x num_inputs x num_inputs
+    cudaMalloc(&attn, batch_size * n_heads * num_inputs * num_inputs * sizeof(float));
+
     // if (err6 != cudaSuccess) {
     //     fprintf(stderr, "Failed to allocate device vector A (error code %s)!\n", cudaGetErrorString(err6));
     //     exit(EXIT_FAILURE);
     // }
     // define grid and block dimensions
+
+    start = clock();
+
+
     dim3 blockDim_d_q(dk, num_inputs, batch_size);
     int d1 = 32;
     int d2 = 32;
@@ -432,8 +435,8 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     dim3 gridDim(d1g, d2g, d3g);
 
     // print blockdim and grid dim
-    printf("blockDim for matmuls: (%d, %d, %d)\n", blockDim_d_q_mod.x, blockDim_d_q_mod.y, blockDim_d_q_mod.z);
-    printf("gridDim for matmuls: (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+    // printf("blockDim for matmuls: (%d, %d, %d)\n", blockDim_d_q_mod.x, blockDim_d_q_mod.y, blockDim_d_q_mod.z);
+    // printf("gridDim for matmuls: (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
 
     // launch the matrix multiplication kernel for Wq
 
@@ -470,25 +473,44 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     printf("blockDim for attn: (%d, %d, %d)\n", attn_block_dim.x, attn_block_dim.y, attn_block_dim.z);
     printf("gridDim for attn: (%d, %d, %d)\n", attn_gridDim.x, attn_gridDim.y, attn_gridDim.z);
 
-    matmul_kernel_transposed_batched<<<attn_gridDim, attn_block_dim>>>(Q, K, attn, num_inputs, dk, num_inputs, batch_size);
+    dim3 matmul_kernel_blockDim(num_inputs, num_inputs,1);
+    dim3 matmul_kernel_gridDim(batch_size,n_heads,1);
+    matmul_kernel_transposed_MH<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(Q, K, attn, num_inputs, head_size, n_heads, batch_size);
     CHECK_KERNELCALL();
 
     // print attn matrix
-    // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
+    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
     // launch the kernel to perform normalization by sqrt(dk)
-    normalize_atomic<<<attn_gridDim, attn_block_dim>>>(attn, num_inputs, num_inputs, dk, batch_size);
+    float sqrt_dk = sqrt((float) dk);
+    normalize_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, sqrt_dk, batch_size, n_heads);
     CHECK_KERNELCALL();
 
     // print attn matrix
-    // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
+    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
     // launch the kernel to fill the triangular upper matrix with -inf
-    masked_fill<<<attn_gridDim, attn_block_dim>>>(attn, num_inputs, num_inputs, batch_size);
+    // fix the grid and block dimensions
+
+    // int sq_n_tokens = num_inputs * num_inputs;
+    // int heads_per_block = 1024/(sq_n_tokens+1) + 1;
+    // int head_splited_to_n_blocks = 1;
+
+    // if (sq_n_tokens > 1024) {
+    //     head_splited_to_n_blocks = (sq_n_tokens-1)/1024 + 1;
+    // }
+
+    // dim3 masked_fill_blockDim(sq_n_tokens*heads_per_block, sq_n_tokens*heads_per_block, 1);
+    // dim3 masked_fill_gridDim(batch_size, n_heads/heads_per_block, head_splited_to_n_blocks);
+
+    dim3 masked_fill_blockDim(num_inputs, num_inputs, 1);
+    dim3 masked_fill_gridDim(batch_size, n_heads, 1);
+
+    masked_fill_atomic<<<masked_fill_gridDim, masked_fill_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
     CHECK_KERNELCALL();
 
     // print attn matrix
-    // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
+    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
     int vecs_per_block = num_inputs;
     if (num_inputs * num_inputs > 1024) {
@@ -503,17 +525,18 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     // launch the kernel for softmaxing the attn matrix
     // softmax<<<num_inputs, num_inputs>>>(attn, num_inputs, num_inputs);
     // softmax_mig(attn, num_inputs, batch_size, attn_gridDim, attn_block_dim);
-    softmax_kernel<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(input, n_tokens, batch_size, n_heads, vecs_per_block, next_token_2_half);
+    softmax_kernel<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(attn, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
     CHECK_KERNELCALL();
 
     // print attn matrix
-    // print_from_GPU(attn, num_inputs, num_inputs, batch_size);
+    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
-
+    dim3 kernel_MH_blocDim(dk, num_inputs, 1);
+    dim3 kernel_MH_gridDim(1, 1, batch_size);
     // launch the matrix multiplication kernel for attn * V
-    matmul_kernel_batched<<<gridDim, blockDim_d_q_mod>>>(attn, V, d_output, num_inputs, num_inputs, dk, batch_size);
+    matmul_kernel_MH<<<kernel_MH_gridDim, kernel_MH_blocDim>>>(attn, V, d_output, num_inputs, dk, n_heads, batch_size, head_size);
     CHECK_KERNELCALL();
-
+    
     // print d_output here
     // print_from_GPU(d_output, num_inputs, dk, batch_size);
 
@@ -523,6 +546,10 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
 
     // print d_output
     // print_from_GPU(d_output_2, num_inputs, dk, batch_size);
+
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 
     // copy the result matrix from device to host
     float * output_array = (float *) malloc(batch_size * num_inputs * dk * sizeof(float));
@@ -555,4 +582,5 @@ void attention(float*** input, int num_inputs, int dk, int batch_size, float*** 
     cudaFree(K);
     cudaFree(V);
 
+    return gpu_time_used;
 }

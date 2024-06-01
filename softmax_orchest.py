@@ -24,7 +24,7 @@ data_output = "./data/outputs_sm.txt"
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
 dk = 1024
-n_tokens = 722
+n_tokens = 64
 n_heads = 1
 head_dim = dk // n_heads
 batch_size = 1
@@ -33,7 +33,7 @@ batch_size = 1
 
 # define the input tensor
 inputs = torch.randn((batch_size, n_heads, n_tokens, n_tokens), dtype=torch.float32).masked_fill(torch.tril(torch.ones((n_tokens, n_tokens))) == 0, float('-inf'))
-inputs[0,0,-1,-1] = 2
+# inputs[0,0,-1,-1] = 2
 
 weights = inputs
 

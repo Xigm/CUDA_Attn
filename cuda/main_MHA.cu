@@ -33,8 +33,9 @@ void readMatrix_batched(FILE *file, float ***matrix, int rows, int cols, int b) 
 
 int main(int argc, char *argv[]) {
     FILE *inputFile, *outputFile;	// File pointers
-    int n_inputs, dk, batch_size;
+    int n_inputs, dk, batch_size, n_heads;
     float ***inputs, **Wq, **Wk, **Wv, **W_cproj, ***outputs;
+    double kernel_time;
 
     if (argc < 5) {
         fprintf(stderr, "Usage: %s <input file> <output file> <n_inputs> <dk>\n", argv[0]);
@@ -50,6 +51,7 @@ int main(int argc, char *argv[]) {
     n_inputs = atoi(argv[3]);
     dk = atoi(argv[4]);
     batch_size = atoi(argv[5]);
+    n_heads = atoi(argv[6]);
 
     printf("n_inputs: %d, dk: %d, batch_size: %d\n", n_inputs, dk, batch_size);
 
@@ -92,7 +94,7 @@ int main(int argc, char *argv[]) {
     fclose(inputFile);
 
     clock_t start = clock();
-    attention(inputs, n_inputs, dk, batch_size, outputs, Wq, Wk, Wv, W_cproj);
+    kernel_time = attention(inputs, n_inputs, dk, batch_size, n_heads, outputs, Wq, Wk, Wv, W_cproj);
     clock_t end = clock();
     float seconds = (float)(end - start) / CLOCKS_PER_SEC;
     printf("Time taken by C code: %f seconds\n", seconds);
@@ -120,6 +122,7 @@ int main(int argc, char *argv[]) {
 
     // append the time taken to the output file
     fprintf(outputFile, "%f\n", seconds);
+    fprintf(outputFile, "%f\n", kernel_time);
 
     // Close the file
     fclose(outputFile);

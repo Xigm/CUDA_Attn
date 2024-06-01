@@ -1,5 +1,6 @@
 import torch
 import time
+
 def simple_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk):
 
     # Define the input tensors
@@ -34,6 +35,54 @@ def simple_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk):
     # Apply attention weights to the value tensor
     output = torch.matmul(attention_weights, value)
 
+    # print(output)
+
+    # Apply attention output projection
+    output = torch.matmul(output, W_cproj)
+
+    # print(output)
+
+    # Print the result
+    return output
+
+
+def MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens,  n_heads, batch_size, mask = None):
+
+    # Define the input tensors
+    query = torch.matmul(inputs, W_q).view(batch_size, n_tokens, n_heads, dk//n_heads).transpose(1, 2)
+    key = torch.matmul(inputs, W_k).view(batch_size, n_tokens, n_heads, dk//n_heads).transpose(1, 2)
+    value = torch.matmul(inputs, W_v).view(batch_size, n_tokens, n_heads, dk//n_heads).transpose(1, 2)
+
+    
+    # Compute the attention scores
+    attention_scores = torch.matmul(query, key.transpose(-2, -1))
+
+    # print(attention_scores)
+
+    attention_scores = attention_scores / torch.sqrt(torch.tensor(dk).float())
+
+    # print(attention_scores)
+
+    # apply casual mask
+    if len(attention_scores.shape) == 4 and mask is None:
+        attention_scores = attention_scores.masked_fill(torch.tril(torch.ones(attention_scores.shape)) == 0, float('-inf'))  
+    elif mask is not None:
+        attention_scores = attention_scores.masked_fill(mask == 0, float('-inf'))
+    else:
+        attention_scores = attention_scores.masked_fill(torch.tril(torch.ones((inputs.shape[0],inputs.shape[0]))) == 0, float('-inf'))
+        
+    # print(attention_scores)
+
+    # Apply softmax to get attention weights
+    attention_weights = torch.softmax(attention_scores, dim=-1)
+
+    # print(attention_weights)
+
+    # Apply attention weights to the value tensor
+    output = torch.matmul(attention_weights, value).transpose(1, 2).contiguous().view(batch_size, n_tokens, dk)
+
+    # print(attention_weights)
+    # print(value.transpose(1,2).view(batch_size, n_tokens, dk))
     # print(output)
 
     # Apply attention output projection

@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include "utils.cu"
+// #include "utils.cu"
 
 /* Atomic operations for floating point numbers 
 
@@ -71,12 +71,12 @@ __global__ void softmax_kernel(float* input, int n_tokens, int batch_size, int n
 
     // Step 2: Subtract max and exponentiate
     float sum_exp = 0.0;
-    atomicSubstract(&input[b * stride + h * n_tokens * size_block + row * size_block + tid], max_val);
+    atomicSubstract(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid], max_val);
 
-    atomicExp(&input[b * stride + h * n_tokens * size_block + row * size_block + tid]);
+    atomicExp(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid]);
 
     // Reduce to find the sum of exps
-    shared_data[tid] = input[b * stride + h * n_tokens * size_block + row * size_block + tid];
+    shared_data[tid] = input[b * stride + h * n_tokens * n_tokens + row * size_block + tid];
     __syncthreads();
     for (int i = next_token_2_half; i > 0; i >>= 1) {
         if (tid < i + shared_mem_stride && tid + i - shared_mem_stride < n_tokens) {
@@ -89,7 +89,7 @@ __global__ void softmax_kernel(float* input, int n_tokens, int batch_size, int n
     sum_exp = shared_data[shared_mem_stride];
 
     // Step 3: Divide by sum of exps
-    atomicDivide(&input[b * stride + h * n_tokens * size_block + row * size_block + tid], sum_exp);
+    atomicDivide(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid], sum_exp);
 
 }
 
