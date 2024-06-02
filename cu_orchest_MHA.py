@@ -22,25 +22,27 @@ data_output = "./data/outputs_MHA.txt"
 # n_tokens = 32*1
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
-dk = 32
-n_tokens = 12
-n_heads = 4
+# max dk now is 1024
+dk = 768
+n_tokens = 2
+n_heads = 12
 head_dim = dk // n_heads
-batch_size = 10
+batch_size = 2
 
 torch.manual_seed(2026)
 
 # define the input tensor
 inputs = torch.randn((batch_size, n_tokens, dk), dtype=torch.float32)
 
+mod_factor = 0.5
 # define the query, key, and value projection matrices
-W_q = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_q = torch.randn((dk, dk), dtype=torch.float32)*mod_factor
 W_q = W_q*torch.abs(W_q)
-W_k = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_k = torch.randn((dk, dk), dtype=torch.float32)*mod_factor
 W_k = W_k*torch.abs(W_k)
-W_v = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_v = torch.randn((dk, dk), dtype=torch.float32)*mod_factor
 W_v = W_v*torch.abs(W_v)
-W_cproj = torch.randn((dk, dk), dtype=torch.float32)*0.5
+W_cproj = torch.randn((dk, dk), dtype=torch.float32)*mod_factor
 W_cproj = W_cproj*torch.abs(W_cproj)
 
 import matplotlib.pyplot as plt
@@ -60,10 +62,10 @@ plt.tight_layout()
 plt.savefig("./results/weights_distributions.png")
 
 # print max of weights
-print("Max of W_q: ", W_q.max().item())
-print("Max of W_k: ", W_k.max().item())
-print("Max of W_v: ", W_v.max().item())
-print("Max of W_cproj: ", W_cproj.max().item())
+# print("Max of W_q: ", W_q.max().item())
+# print("Max of W_k: ", W_k.max().item())
+# print("Max of W_v: ", W_v.max().item())
+# print("Max of W_cproj: ", W_cproj.max().item())
 
 
 weights = [inputs, W_q, W_k, W_v, W_cproj]
@@ -77,20 +79,20 @@ output_py = MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens, n_he
 time_taken = time.time() - time_start
 
 # Send the input tensors to the GPU 
-# inputs_c = inputs.cuda()
-# W_q_c = W_q.cuda()
-# W_k_c = W_k.cuda()
-# W_v_c = W_v.cuda()
-# W_cproj_c = W_cproj.cuda()
-# mask = torch.tril(torch.ones((batch_size, n_heads, n_tokens, n_tokens), device = "cuda")) == 0
+inputs_c = inputs.cuda()
+W_q_c = W_q.cuda()
+W_k_c = W_k.cuda()
+W_v_c = W_v.cuda()
+W_cproj_c = W_cproj.cuda()
+mask = torch.tril(torch.ones((batch_size, n_heads, n_tokens, n_tokens), device = "cuda")) == 0
 
-# time_start = time.time()
-# output_py_gpu = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
+time_start = time.time()
+output_py_gpu = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
 
-# time_taken_gpu = time.time() - time_start
+time_taken_gpu = time.time() - time_start
 
 print("Time taken by python code: ", time_taken)
-# print("Time taken by py-cuda code: ", time_taken_gpu)
+print("Time taken by py-cuda code: ", time_taken_gpu)
 
 warning_supression = " -diag-suppress 549"
 # warning_supression = ""

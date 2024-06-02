@@ -127,13 +127,13 @@ __global__ void matmul_kernel_transposed_batched(float* A, float* B, float* C, i
     }
 }
 
-__global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m, int n, int n_heads, int batch_size) {
+__global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m, int n, int n_heads, int batch_size, int blocks_per_attn) {
 
     // inputs per block is the number of inputs per block, which is the number of rows of the matrix
     // inputs_per_block = 1024 / m
 
     int x = threadIdx.x;
-    int y = threadIdx.y;
+    int y = threadIdx.y + blockIdx.z * blockDim.y;
     int b = blockIdx.x;
     int h = blockIdx.y;
 
@@ -145,6 +145,11 @@ __global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m,
         }
 
         C[b * m * m * n_heads + h * m * m + m * y + x] = sum;
+        if (blockIdx.z == 1) {
+            // printf("value %f, pos %d, sum %f\n", C[b * m * m * n_heads + h * m * m + m * y + x], b * m * m * n_heads + h * m * m + m * y + x, sum);
+            
+            // printf("sum %f \n", sum);
+        }
         // printf("Sum %f, in position %d to the matrix value %f\n",sum, b * m * m * n_heads + h * m * m + m * y + x, C[b * m * m * n_heads + h * m * m + m * y + x]);
     }
 
@@ -163,6 +168,8 @@ __global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     int b = blockIdx.z;
 
+    // if (x == 0)    printf("x %d, y %d, b %d\n", x, y, b);
+
     int head = x / head_size;
 
     // int dk = n_heads * head_size;
@@ -171,19 +178,27 @@ __global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int
         float sum = 0.0f;
         for (int k = 0; k < m ; k++) {
             
+            // A is Attn = [B, n_heads, T, T]
+            // B is V = [B, T, dk]
 
             float a = A[b * m * m * n_heads + y * m + k + head * m * m];
-            float bb =  B[b * m * n + x + k * n_heads * head_size];
+            // float bb = B[b * m * n + x + k * n_heads * head_size];
+            float bb = B[b * m * n + x + k * n_heads * head_size];
             sum += a * bb;
-
-
+            
             // if (x == 0 && y == 1 && b == 0) {
-            //     printf("A %f, B %f \n", a, bb);
+            //     printf("A %f, B %f , pos A %d pos B %d\n", a, bb, b * m * m * n_heads + y * m + k + head * m * m, b * m * n + x + k * n_heads * head_size);
             // }
         }
 
+        // [ B , T, dk]
+
         C[b * m * n + n * y + x] = sum;
-        // printf("Sum %f, in position %d the matrix value %f\n",sum, b * m * n + n * y + x, C[b * m * n + n * y + x]);
+        if (blockIdx.y == 1) {
+            // printf("value %f, pos %d\n", C[b * m * n + n * y + x], b * m * n + n * y + x);
+            
+            // printf("sum %f \n", sum);
+        }
     }
 }
 
@@ -201,13 +216,14 @@ __global__ void normalize(float* A, int m, int n, int dk) {
 }
 
 __global__ void normalize_atomic(float* A, int m, int n, float sqrt_dk, int batch_size, int n_heads) {
-    int y = threadIdx.y;
     int x = threadIdx.x;
+    int y = threadIdx.y + blockIdx.z * blockDim.y;
     int b = blockIdx.x;
     int h = blockIdx.y;
 
-    atomicDivide(&A[b * m * n * n_heads + h * m * n + y * n + x], sqrt_dk);
-    
+    if (y < n) {
+    atomicDivide(&A[b * m * n * n_heads + h * m * n + y * m + x], sqrt_dk);
+    }
 }
 
 // kernel to fill the upper triangular matrix with -inf
@@ -227,7 +243,7 @@ __global__ void normalize_atomic(float* A, int m, int n, float sqrt_dk, int batc
 // kernel to fill the upper triangular matrix with -inf
 __global__ void masked_fill_atomic(float* A, int m, int n, int batch_size, int n_heads) {
     int x = threadIdx.x;
-    int y = threadIdx.y;
+    int y = threadIdx.y + blockIdx.z * blockDim.y;
     int b =  blockIdx.x;
     int h = blockIdx.y;
 
@@ -284,7 +300,7 @@ __global__ void kernel_substract(float * z, float val, int num_inputs, int batch
     int idx = zz * num_inputs * num_inputs + row * num_inputs + col;
 
     if (row < num_inputs && col < num_inputs && zz < batch_size) {
-        atomicSubstract(&z[idx], val);
+        atomicAdd(&z[idx], -val);
     }
 
 }
@@ -317,7 +333,7 @@ void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid,
 
 
     // // Print input array
-    print_from_GPU(input, num_inputs, num_inputs, batch_size);
+    // print_from_GPU(input, num_inputs, num_inputs, batch_size);
 
     // sum all elements from a row
     float *sum;
@@ -364,7 +380,7 @@ void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid,
 
 double attention(float*** input, int num_inputs, int dk, int batch_size, int n_heads, float*** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {    
     
-    clock_t start, end;
+    clock_t start, start_global, end;
     double gpu_time_used;
 
     // allocate device memory for inputs, outputs, weights, and intermediate results attn
@@ -399,6 +415,7 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     // define grid and block dimensions
 
     start = clock();
+    start_global = clock();
 
 
     dim3 blockDim_d_q(dk, num_inputs, batch_size);
@@ -448,6 +465,13 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_input, d_Wv, V, num_inputs, dk, dk, batch_size);
     CHECK_KERNELCALL();
 
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to make projections Wq, Wk, Wv: %f seconds\n", gpu_time_used);
+
+    start = clock();
+
     // print Q
     // print_from_GPU(Q, num_inputs, dk, batch_size);
 
@@ -470,21 +494,44 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
 
     dim3 attn_dim(num_inputs, num_inputs, d3g);
 
-    printf("blockDim for attn: (%d, %d, %d)\n", attn_block_dim.x, attn_block_dim.y, attn_block_dim.z);
-    printf("gridDim for attn: (%d, %d, %d)\n", attn_gridDim.x, attn_gridDim.y, attn_gridDim.z);
+    // printf("blockDim for attn: (%d, %d, %d)\n", attn_block_dim.x, attn_block_dim.y, attn_block_dim.z);
+    // printf("gridDim for attn: (%d, %d, %d)\n", attn_gridDim.x, attn_gridDim.y, attn_gridDim.z);
 
-    dim3 matmul_kernel_blockDim(num_inputs, num_inputs,1);
-    dim3 matmul_kernel_gridDim(batch_size,n_heads,1);
-    matmul_kernel_transposed_MH<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(Q, K, attn, num_inputs, head_size, n_heads, batch_size);
+    int blocks_per_attn = 1;
+    if (num_inputs * num_inputs > 1024) {
+        blocks_per_attn = (num_inputs - 1) / (1024/num_inputs) + 1;
+    }
+
+    // launch the kernel to perform Q * K^T
+    dim3 matmul_kernel_blockDim(num_inputs, 1024/num_inputs, 1);
+    dim3 matmul_kernel_gridDim(batch_size,n_heads, blocks_per_attn);
+    // printf("blockDim for matmul_kernel_transposed_MH: (%d, %d, %d)\n", matmul_kernel_blockDim.x, matmul_kernel_blockDim.y, matmul_kernel_blockDim.z);
+    // printf("gridDim for matmul_kernel_transposed_MH: (%d, %d, %d)\n", matmul_kernel_gridDim.x, matmul_kernel_gridDim.y, matmul_kernel_gridDim.z);
+    matmul_kernel_transposed_MH<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(Q, K, attn, num_inputs, head_size, n_heads, batch_size, blocks_per_attn);
     CHECK_KERNELCALL();
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to make attn matrix: %f seconds\n", gpu_time_used);
+
+    start = clock();
 
     // print attn matrix
     // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
     // launch the kernel to perform normalization by sqrt(dk)
     float sqrt_dk = sqrt((float) dk);
+    // printf("sqrt %f\n", sqrt_dk);
     normalize_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, sqrt_dk, batch_size, n_heads);
     CHECK_KERNELCALL();
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to normalize attn matrix: %f seconds\n", gpu_time_used);
+
+    start = clock();
 
     // print attn matrix
     // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
@@ -503,11 +550,20 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     // dim3 masked_fill_blockDim(sq_n_tokens*heads_per_block, sq_n_tokens*heads_per_block, 1);
     // dim3 masked_fill_gridDim(batch_size, n_heads/heads_per_block, head_splited_to_n_blocks);
 
-    dim3 masked_fill_blockDim(num_inputs, num_inputs, 1);
-    dim3 masked_fill_gridDim(batch_size, n_heads, 1);
+    // dim3 masked_fill_blockDim(num_inputs, num_inputs/, 1);
+    // dim3 masked_fill_gridDim(batch_size, n_heads, 1);
 
-    masked_fill_atomic<<<masked_fill_gridDim, masked_fill_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
+
+
+    masked_fill_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
     CHECK_KERNELCALL();
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to mask attn matrix: %f seconds\n", gpu_time_used);
+
+    start = clock();
 
     // print attn matrix
     // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
@@ -525,17 +581,44 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     // launch the kernel for softmaxing the attn matrix
     // softmax<<<num_inputs, num_inputs>>>(attn, num_inputs, num_inputs);
     // softmax_mig(attn, num_inputs, batch_size, attn_gridDim, attn_block_dim);
-    softmax_kernel<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(attn, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
+    softmax_kernel_v2<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(attn, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
     CHECK_KERNELCALL();
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to softmax attn matrix: %f seconds\n", gpu_time_used);
+
+    start = clock();
 
     // print attn matrix
     // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
-    dim3 kernel_MH_blocDim(dk, num_inputs, 1);
-    dim3 kernel_MH_gridDim(1, 1, batch_size);
+    int total_block_n_inputs = 1;
+    int dk_per_block = num_inputs;
+    if (dk * num_inputs > 1024) {
+         
+        dk_per_block = 1024/dk;
+        total_block_n_inputs = (num_inputs - 1)/dk_per_block + 1;
+
+        
+    }
+
+    dim3 kernel_MH_bloqDim(dk, dk_per_block, 1);
+    dim3 kernel_MH_gridDim(1, total_block_n_inputs, batch_size);
+
+    // printf("blockDim for matmul_kernel_MH: (%d, %d, %d)\n", kernel_MH_bloqDim.x, kernel_MH_bloqDim.y, kernel_MH_bloqDim.z);
+    // printf("gridDim for matmul_kernel_MH: (%d, %d, %d)\n", kernel_MH_gridDim.x, kernel_MH_gridDim.y, kernel_MH_gridDim.z);
     // launch the matrix multiplication kernel for attn * V
-    matmul_kernel_MH<<<kernel_MH_gridDim, kernel_MH_blocDim>>>(attn, V, d_output, num_inputs, dk, n_heads, batch_size, head_size);
+    matmul_kernel_MH<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(attn, V, d_output, num_inputs, dk, n_heads, batch_size, head_size);
     CHECK_KERNELCALL();
+
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to make output matrix: %f seconds\n", gpu_time_used);
+
+    start = clock();
     
     // print d_output here
     // print_from_GPU(d_output, num_inputs, dk, batch_size);
@@ -544,12 +627,17 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_output, d_W_cproj, d_output_2, num_inputs, dk, dk, batch_size);
     CHECK_KERNELCALL();
 
+    end = clock();
+    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time to make projection of output matrix 2: %f seconds\n", gpu_time_used);
+
     // print d_output
     // print_from_GPU(d_output_2, num_inputs, dk, batch_size);
 
 
     end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    gpu_time_used = ((double) (end - start_global)) / CLOCKS_PER_SEC;
 
     // copy the result matrix from device to host
     float * output_array = (float *) malloc(batch_size * num_inputs * dk * sizeof(float));

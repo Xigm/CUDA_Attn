@@ -18,15 +18,15 @@ __device__ inline void atomicDivide(float *address, float val) {
     } while (assumed != old);
 }
 
-__device__ inline void atomicSubstract(float *address, float val) {
-    int *address_as_i = (int*) address;
-    int old = *address_as_i, assumed;
-    do {
-        assumed = old;
-        old = atomicCAS(address_as_i, assumed,
-                        __float_as_int(__int_as_float(assumed) - val));
-    } while (assumed != old);
-}
+// __device__ inline void atomicSubstract(float *address, float val) {
+//     int *address_as_i = (int*) address;
+//     int old = *address_as_i, assumed;
+//     do {
+//         assumed = old;
+//         old = atomicCAS(address_as_i, assumed,
+//                         __float_as_int(__int_as_float(assumed) - val));
+//     } while (assumed != old);
+// }
 
 __device__ inline void atomicExp(float *address) {
     int *address_as_i = (int*) address;
@@ -43,7 +43,7 @@ __global__ void softmax_kernel(float* input, int n_tokens, int batch_size, int n
 
     extern __shared__ float shared_data[];
 
-    int tid = threadIdx.x + threadIdx.y * n_tokens; // current thread index
+    int tid = threadIdx.x + threadIdx.y * blockDim.y; // current thread index
     int shared_mem_stride = threadIdx.y * n_tokens;
     int b = blockIdx.x; // current batch index
     int h = blockIdx.y; // current head index
@@ -71,7 +71,7 @@ __global__ void softmax_kernel(float* input, int n_tokens, int batch_size, int n
 
     // Step 2: Subtract max and exponentiate
     float sum_exp = 0.0;
-    atomicSubstract(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid], max_val);
+    atomicAdd(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid], -max_val);
 
     atomicExp(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid]);
 
@@ -92,6 +92,84 @@ __global__ void softmax_kernel(float* input, int n_tokens, int batch_size, int n
     atomicDivide(&input[b * stride + h * n_tokens * n_tokens + row * size_block + tid], sum_exp);
 
 }
+
+__global__ void softmax_kernel_v2(float* input, int n_tokens, int batch_size, int n_heads, int vecs_per_block, int next_token_2_half) {
+
+    extern __shared__ float shared_data[];
+
+    int b = blockIdx.x; // current batch index
+    int h = blockIdx.y; // current head index
+    int intra_block_tid = threadIdx.x + threadIdx.y * blockDim.x; // current thread index
+    int tid = blockIdx.z * blockDim.x * blockDim.y
+            + b * n_tokens * n_tokens * n_heads
+            + h * n_tokens * n_tokens
+            + intra_block_tid;
+
+    // int shared_mem_stride = threadIdx.y * n_tokens;
+
+    // int row = blockIdx.z; // current row index
+    // int stride = n_tokens * n_tokens * n_heads;
+    // int size_block = n_tokens * vecs_per_block;
+    int first_elem_sm = threadIdx.y * n_tokens 
+                        + blockIdx.z * blockDim.x * blockDim.y
+                        + b * n_tokens * n_tokens * n_heads
+                        + h * n_tokens * n_tokens;
+
+    
+
+    // ONLY COMPUTE WHEN TID IS LESS THAN T * T * n_heads
+
+    if ( tid < n_tokens * n_tokens * n_heads * batch_size && threadIdx.y + blockIdx.z * blockDim.y < n_tokens) {
+
+        float max_val;
+
+        // Reduce to find global max within block
+        // printf("%f from tid %d row %d batch %d and head %d sum %d\n", input[b * stride + h * n_tokens * n_tokens + row * n_tokens + tid], tid, row, b, h, b * stride + h * n_tokens * n_tokens + row * n_tokens + tid);
+        shared_data[intra_block_tid] = input[tid];
+        // printf("Value: %f\n", shared_data[tid]);
+        __syncthreads();
+        for (int i = next_token_2_half; i > 0; i >>= 1) {
+            // first cond: only the first half will be active
+            // second cond: only look at values within n_tok, 
+            //      i + threadIdx.x = pos we will look to compute max
+            if (tid < i + first_elem_sm && i + threadIdx.x < n_tokens) {
+                // illegal memory access if not splitting the if u know
+                if (shared_data[intra_block_tid + i] > shared_data[intra_block_tid]) shared_data[intra_block_tid] = shared_data[intra_block_tid + i];
+                
+            }
+            __syncthreads();
+        }
+
+        max_val = shared_data[threadIdx.y * n_tokens];
+
+        __syncthreads();
+        
+        // Step 2: Subtract max and exponentiate
+        float sum_exp = 0.0;
+
+        atomicAdd(&input[tid], -max_val);
+
+        atomicExp(&input[tid]);
+
+        // Reduce to find the sum of exps
+        shared_data[intra_block_tid] = input[tid];
+        __syncthreads();
+        for (int i = next_token_2_half; i > 0; i >>= 1) {
+            if (tid < i + first_elem_sm && i + threadIdx.x < n_tokens) {
+                shared_data[intra_block_tid] += shared_data[intra_block_tid + i];
+            }
+            __syncthreads();
+        }
+
+        // Broadcast the sum to all threads
+        sum_exp = shared_data[threadIdx.y * n_tokens];
+
+        // Step 3: Divide by sum of exps
+        atomicDivide(&input[tid], sum_exp);
+
+    }
+}
+
 
 int next_power_of_2(int n) {
     if (n <= 1) return 1;
@@ -127,12 +205,14 @@ double softmax(float**** input, int num_inputs, int batch_size, int n_heads, flo
 
     int tokens_power_2_half = next_power_of_2(num_inputs)/2;
 
+    printf("Launching kernel with %d %d\n", num_inputs, vecs_per_block);
+    printf("Grid dims: %d %d %d\n", grid_dims.x, grid_dims.y, grid_dims.z);
 
     // time the kernel execution
     clock_t start, end;
     double cpu_time_used;
     start = clock();
-    softmax_kernel<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(d_input, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
+    softmax_kernel_v2<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(d_input, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
     end = clock();
     cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
     printf("Time taken by GPU kernel: %f seconds\n", cpu_time_used);

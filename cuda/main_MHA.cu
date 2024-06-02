@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Load the matrices
-    printf("Reading input file\n");
+    // printf("Reading input file\n");
     readMatrix_batched(inputFile, inputs, n_inputs, dk, batch_size);
     readMatrix(inputFile, Wq, dk, dk);
     readMatrix(inputFile, Wk, dk, dk);
@@ -109,7 +109,6 @@ int main(int argc, char *argv[]) {
 
     // Process and write the content of inputs in the output file
     int count = 0;
-    printf("%d %d\n", n_inputs, dk);
     for (int k = 0; k < batch_size; k++) {
         for (int i = 0; i < n_inputs; i++) {
             for (int j = 0; j < dk; j++) {

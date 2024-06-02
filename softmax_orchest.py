@@ -23,11 +23,11 @@ data_output = "./data/outputs_sm.txt"
 # n_tokens = 32*1
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
-dk = 1024
-n_tokens = 64
-n_heads = 1
+dk = 4
+n_tokens = 33
+n_heads = 2
 head_dim = dk // n_heads
-batch_size = 1
+batch_size = 2
 
 # torch.manual_seed(2026)
 
@@ -51,6 +51,12 @@ inputs_c = inputs.cuda()
 time_start = time.time()
 output_py_gpu = torch.nn.functional.softmax(inputs_c, dim = -1)
 time_taken_gpu = time.time() - time_start
+
+# print(inputs[0,0,-1,:].max())
+print(sum(torch.exp(inputs[0,1,0,:] - inputs[0,1,0,:].max())))
+print(torch.exp(inputs[0,1,0,:] - inputs[0,1,0,:].max()))
+print(inputs[0,1,0,:].max())
+print(output_py[0,1,0,:])
 
 del inputs_c
 
