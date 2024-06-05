@@ -1,5 +1,5 @@
 from py.attention_python import simple_self_attention, gpu_self_attention, MH_self_attention
-from py.utils import write2file, readfromfile
+from py.utils import write2file, readfromfile, read_matrix_from_file, read_matrix_from_file_sm
 import torch
 import os
 import time
@@ -24,10 +24,10 @@ data_output = "./data/outputs_MHA.txt"
 # gpt2 sizes : 768, 1024, 1200, 1600
 # max dk now is 1024
 dk = 768
-n_tokens = 2
+n_tokens = 128
 n_heads = 12
 head_dim = dk // n_heads
-batch_size = 2
+batch_size = 4
 
 torch.manual_seed(2026)
 
@@ -60,6 +60,7 @@ axs[1, 1].set_title('W_cproj')
 
 plt.tight_layout()
 plt.savefig("./results/weights_distributions.png")
+plt.close()
 
 # print max of weights
 # print("Max of W_q: ", W_q.max().item())
@@ -75,7 +76,8 @@ write2file(data_input, weights, dk, n_tokens, batch_size)
 
 # call the function
 time_start = time.time()
-output_py = MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens, n_heads, batch_size)
+with torch.no_grad():
+    output_py, debug_info = MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens, n_heads, batch_size)
 time_taken = time.time() - time_start
 
 # Send the input tensors to the GPU 
@@ -87,12 +89,9 @@ W_cproj_c = W_cproj.cuda()
 mask = torch.tril(torch.ones((batch_size, n_heads, n_tokens, n_tokens), device = "cuda")) == 0
 
 time_start = time.time()
-output_py_gpu = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
-
+with torch.no_grad():
+    output_py_gpu, _ = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
 time_taken_gpu = time.time() - time_start
-
-print("Time taken by python code: ", time_taken)
-print("Time taken by py-cuda code: ", time_taken_gpu)
 
 warning_supression = " -diag-suppress 549"
 # warning_supression = ""
@@ -104,17 +103,37 @@ os.system(command)
 os.system(str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk) + ' ' + str(batch_size) + ' ' + str(n_heads))
 
 output_c, time_taken, time_taken_kernel = readfromfile(data_output, dk, n_tokens, batch_size)
+output_debug_c = read_matrix_from_file("./data/debug_output.txt", n_tokens, dk, batch_size)
+# output_debug_c = read_matrix_from_file_sm("./data/debug_softmax.txt", n_tokens, n_tokens, n_heads, batch_size)
 
-print("Kernel time taken: ", time_taken_kernel)
+
+print("Time taken by python code: ", time_taken*1000, "ms")
+print("Time taken by py-cuda code: ", time_taken_gpu*1000, "ms")
+print("Kernel time taken: ", time_taken_kernel, "ms")
 
 # compare the results if output_py and output_c are the same and print true if they are
 if torch.allclose(output_py, output_c, atol=1e-04):
     print("Implementation is correct!")
-else:
+else:   
     print("Implementation is incorrect!")
 
 # compute tolerance
 tolerance = (output_py - output_c).abs().max().item()
 print("Tolerance: ", tolerance)
+
+tolerance = (output_py - output_py_gpu.cpu()).abs().max().item()
+print("Tolerance GPU - py: ", tolerance)
+
+tolerance = (output_py_gpu.cpu() - output_c).abs().max().item()
+print("Tolerance GPU - c: ", tolerance)
+
+tolerance_debug = (debug_info - output_debug_c).abs().max().item()
+print("Tolerance debug: ", tolerance_debug)
+
+# plt.plot(debug_info.squeeze())
+# plt.plot(output_debug_c.squeeze())
+# plt.plot((debug_info - output_debug_c).abs().squeeze())
+# plt.legend(["Py", "C", "Error"])
+# plt.show()
 
 

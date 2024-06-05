@@ -86,6 +86,17 @@ void flattenMatrix(float** matrix, int m, int n, float* flattenedMatrix) {
     }
 }
 
+void flattenMatrix_repeated(float** matrix, int m, int n, int b, float* flattenedMatrix) {
+  for (int k = 0; k < b; k++) {
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            flattenedMatrix[k * n * m + i * n + j] = matrix[i][j];  // Correct the index from i * m + j to i * n + j
+            // printf("%f ", flattenedMatrix[i * n + j]);
+        }
+    }
+  }
+}
+
 
 void loadMatrixToGPU(float** matrix, float** deviceMatrix, int m, int n) {
     // Flatten the matrix
@@ -104,6 +115,28 @@ void loadMatrixToGPU(float** matrix, float** deviceMatrix, int m, int n) {
 
     // Copy the flattened matrix from host to device
     cudaMemcpy(*deviceMatrix, flattenedMatrix, size, cudaMemcpyHostToDevice);
+
+
+}
+
+
+void loadMatrixToGPU_b_repeated(float** matrix, float** deviceMatrix, int m, int n, int batch_size) {
+    // Flatten the matrix
+    float* flattenedMatrix = (float *)malloc(batch_size * m * n * sizeof(float));
+    flattenMatrix_repeated(matrix, m, n, batch_size, flattenedMatrix);
+
+    size_t size = batch_size * n * m * sizeof(float);
+
+    // Allocate memory on the GPU
+    cudaError_t err =  cudaMalloc((void**) deviceMatrix, size);
+
+    if (err != cudaSuccess) {
+        fprintf(stderr, "Failed to allocate device matrix: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    // Copy the flattened matrix from host to device
+    CHECK(cudaMemcpy(*deviceMatrix, flattenedMatrix, size, cudaMemcpyHostToDevice));;
 
 
 }
@@ -182,5 +215,56 @@ void print_from_GPU_sm(float* deviceMatrix, int m, int n, int b, int n_heads) {
      
     }
 
+    free(d_array);
+}
+
+void write_from_GPU_to_file_sm(float* deviceMatrix, int m, int n, int b, int n_heads, const char* filename) {
+    float *d_array = (float *)malloc(m * n * b * n_heads * sizeof(float));
+    cudaMemcpy(d_array, deviceMatrix, m * n * b * n_heads * sizeof(float), cudaMemcpyDeviceToHost);
+
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL) {
+        fprintf(stderr, "Failed to open the file for writing.\n");
+        free(d_array);
+        return;
+    }
+
+    for (int k = 0; k < b; k++) {
+        for (int h = 0; h < n_heads; h++) {
+            for (int i = 0; i < m; i++) {
+                for (int j = 0; j < n; j++) {
+                    fprintf(fp, "%f ", d_array[k * m * n * n_heads + h * m * n + i * n + j]);
+                }
+                fprintf(fp, "\n");
+            }
+        }
+    }
+
+    fclose(fp);
+    free(d_array);
+}
+
+
+void write_from_GPU_to_file(float* deviceMatrix, int m, int n, int b, const char* filename) {
+    float *d_array = (float *)malloc(m * n * b * sizeof(float));
+    cudaMemcpy(d_array, deviceMatrix, m * n * b * sizeof(float), cudaMemcpyDeviceToHost);
+
+    FILE *fp = fopen(filename, "w");
+    if (fp == NULL) {
+        fprintf(stderr, "Failed to open the file for writing.\n");
+        free(d_array);
+        return;
+    }
+
+    for (int k = 0; k < b; k++) {
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < m; j++) {
+                fprintf(fp, "%f ", d_array[k * m * n + i * m + j]);
+            }
+            fprintf(fp, "\n");
+        }
+    }
+
+    fclose(fp);
     free(d_array);
 }

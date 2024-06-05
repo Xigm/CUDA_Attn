@@ -54,6 +54,27 @@ def readfromfile(path, dk, n_tokens, batch_size = None, n_heads = None):
         return outputs, time_taken, time_taken_k
         
 
+def read_matrix_from_file_sm(filename, m, n, b, n_heads):
+    data = []
+    with open(filename, 'r') as file:
+        for i, line in enumerate(file):
+            print(i)
+            data.extend([float(num) for num in line.split()])
+    
+    data = torch.tensor(data)
+    data = data.reshape(b, n_heads, m, n)
+    return data
+
+def read_matrix_from_file(filename, m, n, b):
+    data = []
+    with open(filename, 'r') as file:
+        for line in file:
+            data.extend([float(num) for num in line.split()])
+    
+    data = torch.tensor(data)
+    data = data.reshape(b, m, n)
+    return data
+
 
 
 def prepare_string(weights, dk, n_tokens):

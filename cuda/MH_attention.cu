@@ -68,9 +68,9 @@ __global__ void matmul_kernel_batched(float* A, float* B, float* C, int m, int n
     }
 }
 
-__global__ void matmul_kernel_semibatched(float* A, float* B, float* C, int m, int n, int p, int batch_size) {
-    int y = blockIdx.y * blockDim.y + threadIdx.y;    
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void matmul_kernel_semibatched(float*__restrict__ A, float*__restrict__ B, float*__restrict__ C, int m, int n, int p, int batch_size) {
+    int x = blockIdx.y * blockDim.y + threadIdx.y;    
+    int y = blockIdx.x * blockDim.x + threadIdx.x;
     int z = blockIdx.z * blockDim.z + threadIdx.z;
 
     if (x < m && y < p && z < batch_size) {
@@ -87,6 +87,57 @@ __global__ void matmul_kernel_semibatched(float* A, float* B, float* C, int m, i
     }
 }
 
+__global__ void matmul_kernel_triple_semibatched(float* input, float* Wq, float* Wk, float* Wv, float* Q, float* K, float* V, int m, int n, int p, int batch_size){
+    int x = blockIdx.y * blockDim.y + threadIdx.y;    
+    int y = blockIdx.x * blockDim.x + threadIdx.x;
+    int z = blockIdx.z * blockDim.z + threadIdx.z;
+
+    int b = z % 3;
+    int flag = z / 3;
+
+    if (x < m && y < p && b < batch_size){
+
+        float sum = 0.0f;
+
+        if (flag == 0) {
+            
+            // float sum = 0.0f;
+            for (int k = 0; k < n; k++) {
+                // I simply add z * m * n to the index to access the correct batch for A,
+                // while B does not have batch dim
+                sum += input[z * m * n + x * n + k] * Wq[k * p + y];
+            }
+            // printf("%d sum %f \n", x * p + y, sum);
+            Q[z * m * p + x * p + y] = sum;
+        }
+        else if (flag == 1)
+        {
+                 
+            for (int k = 0; k < n; k++) {
+                // I simply add z * m * n to the index to access the correct batch for A,
+                // while B does not have batch dim
+                sum += input[z * m * n + x * n + k] * Wk[k * p + y];
+            }
+            // printf("%d sum %f \n", x * p + y, sum);
+            K[z * m * p + x * p + y] = sum;
+
+        }
+        else if (flag == 2)
+        {
+            // printf("Enters kernel\n");
+            
+            for (int k = 0; k < n; k++) {
+                // I simply add z * m * n to the index to access the correct batch for A,
+                // while B does not have batch dim
+                sum += input[z * m * n + x * n + k] * Wv[k * p + y];
+            }
+            // printf("%d sum %f \n", x * p + y, sum);
+            V[z * m * p + x * p + y] = sum;
+        }
+    }        
+
+
+}
 
 
 
@@ -127,7 +178,7 @@ __global__ void matmul_kernel_transposed_batched(float* A, float* B, float* C, i
     }
 }
 
-__global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m, int n, int n_heads, int batch_size, int blocks_per_attn) {
+__global__ void matmul_kernel_transposed_MH(float*__restrict__ A, float*__restrict__ B, float*__restrict__ C, int m, int n, int n_heads, int batch_size, int blocks_per_attn) {
 
     // inputs per block is the number of inputs per block, which is the number of rows of the matrix
     // inputs_per_block = 1024 / m
@@ -145,12 +196,6 @@ __global__ void matmul_kernel_transposed_MH(float* A, float* B, float* C, int m,
         }
 
         C[b * m * m * n_heads + h * m * m + m * y + x] = sum;
-        if (blockIdx.z == 1) {
-            // printf("value %f, pos %d, sum %f\n", C[b * m * m * n_heads + h * m * m + m * y + x], b * m * m * n_heads + h * m * m + m * y + x, sum);
-            
-            // printf("sum %f \n", sum);
-        }
-        // printf("Sum %f, in position %d to the matrix value %f\n",sum, b * m * m * n_heads + h * m * m + m * y + x, C[b * m * m * n_heads + h * m * m + m * y + x]);
     }
 
 }
@@ -172,8 +217,11 @@ __global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int
 
     int head = x / head_size;
 
+    
+    // m = n_tok
+    // n = dk
     // int dk = n_heads * head_size;
-    if (x < n_heads*head_size && y < m && b < batch_size) {
+    if (x < n && y < m) {
 
         float sum = 0.0f;
         for (int k = 0; k < m ; k++) {
@@ -186,7 +234,7 @@ __global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int
             float bb = B[b * m * n + x + k * n_heads * head_size];
             sum += a * bb;
             
-            // if (x == 0 && y == 1 && b == 0) {
+            // if (x == 1024 && k < 10) {
             //     printf("A %f, B %f , pos A %d pos B %d\n", a, bb, b * m * m * n_heads + y * m + k + head * m * m, b * m * n + x + k * n_heads * head_size);
             // }
         }
@@ -194,11 +242,11 @@ __global__ void matmul_kernel_MH(float* A, float* B, float* C, int m, int n, int
         // [ B , T, dk]
 
         C[b * m * n + n * y + x] = sum;
-        if (blockIdx.y == 1) {
-            // printf("value %f, pos %d\n", C[b * m * n + n * y + x], b * m * n + n * y + x);
+        // if (blockIdx.x == 1) {
+        //     printf("value %f, pos %d\n", C[b * m * n + n * y + x], b * m * n + n * y + x);
             
-            // printf("sum %f \n", sum);
-        }
+        //     printf("sum %f \n", sum);
+        // }
     }
 }
 
@@ -378,10 +426,13 @@ void softmax_mig(float *input, int num_inputs, int batch_size, dim3 ks_exp_grid,
 //     cudaFree(d_C);
 // }
 
-double attention(float*** input, int num_inputs, int dk, int batch_size, int n_heads, float*** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {    
-    
-    clock_t start, start_global, end;
-    double gpu_time_used;
+float attention(float*** input, int num_inputs, int dk, int batch_size, int n_heads, float*** output, float** Wq, float** Wk, float** Wv, float **W_cproj) {    
+
+
+    cudaEvent_t start_cuda, start_global, stop_cuda;
+    CHECK(cudaEventCreate(&start_cuda));
+    CHECK(cudaEventCreate(&start_global));
+    CHECK(cudaEventCreate(&stop_cuda));
 
     // allocate device memory for inputs, outputs, weights, and intermediate results attn
     float* d_input, *d_output, *d_output_2, *d_Wq, *d_Wk, *d_Wv, *d_W_cproj, *attn, *Q, *K, *V;
@@ -408,76 +459,42 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     // CAREFUL: This is MHA, then size is batch x n_heads x num_inputs x num_inputs
     cudaMalloc(&attn, batch_size * n_heads * num_inputs * num_inputs * sizeof(float));
 
-    // if (err6 != cudaSuccess) {
-    //     fprintf(stderr, "Failed to allocate device vector A (error code %s)!\n", cudaGetErrorString(err6));
-    //     exit(EXIT_FAILURE);
-    // }
-    // define grid and block dimensions
-
-    start = clock();
-    start_global = clock();
-
-
-    dim3 blockDim_d_q(dk, num_inputs, batch_size);
-    int d1 = 32;
-    int d2 = 32;
-    int d3 = 32;
-    if( num_inputs < d1) {
-        d1 = num_inputs;
-    }
-    if (dk < d2) {
-        d2 = dk;
-    }
-    if (batch_size < d3) {
-        d3 = 1;
+    CHECK(cudaEventRecord(start_global, 0));
+    
+    int total_block_n_inputs = 1;
+    int dk_per_block = num_inputs;
+    int total_blocks_dk = 1;
+    int first_dim = dk;
+    if (dk * num_inputs > 1024) {
+         
+        if (dk > 1024) {
+            dk_per_block = 1;
+            total_block_n_inputs = num_inputs;
+            total_blocks_dk = (dk - 1)/1024 + 1;
+            first_dim = 1024;
+        }   
+        else{
+            dk_per_block = 1024/dk;
+            total_block_n_inputs = (num_inputs - 1)/dk_per_block + 1;
+        }
     }
 
-    dim3 blockDim_d_q_mod(d1, d2, 1);
+    dim3 kernel_MH_bloqDim(first_dim, dk_per_block, 1);
+    dim3 kernel_MH_gridDim(total_blocks_dk, total_block_n_inputs, batch_size);
 
-    int d1g = 1;
-    int d2g = 1;
-    int d3g = 1;
-    if (d1 == 32) {
-        d1g = ((int) num_inputs/(32 + 1)) + 1;
-    }
-    if (d2 == 32) {
-        d2g = ((int) dk/(32 + 1)) + 1;
-    }
-    if (d3 == 32) {
-        // d3g = ((int) batch_size/(32 + 1)) + 1;
-        d3g = batch_size;
-    }
-
-    d3g = batch_size;
-    dim3 gridDim(d1g, d2g, d3g);
-
-    // print blockdim and grid dim
-    // printf("blockDim for matmuls: (%d, %d, %d)\n", blockDim_d_q_mod.x, blockDim_d_q_mod.y, blockDim_d_q_mod.z);
-    // printf("gridDim for matmuls: (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
-
-    // launch the matrix multiplication kernel for Wq
-
-    // print using print_from_GPU(float* deviceMatrix, int m, int n, int b)
-    // print_from_GPU(d_input, num_inputs, dk, batch_size);
-
-    matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_input, d_Wq, Q, num_inputs, dk, dk, batch_size);
-    matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_input, d_Wk, K, num_inputs, dk, dk, batch_size);
-    matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_input, d_Wv, V, num_inputs, dk, dk, batch_size);
+    CHECK(cudaEventRecord(start_cuda, 0));
+    matmul_kernel_semibatched<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(d_input, d_Wq, Q, num_inputs, dk, dk, batch_size);
+    matmul_kernel_semibatched<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(d_input, d_Wk, K, num_inputs, dk, dk, batch_size);
+    matmul_kernel_semibatched<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(d_input, d_Wv, V, num_inputs, dk, dk, batch_size);
+    // matmul_kernel_triple_semibatched<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(d_input, d_Wq, d_Wk, d_Wv, Q, K, V, num_inputs, dk, dk, batch_size);
     CHECK_KERNELCALL();
 
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    float milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel matmul x3 time: %f ms\n", milliseconds);
 
-    printf("Time to make projections Wq, Wk, Wv: %f seconds\n", gpu_time_used);
-
-    start = clock();
-
-    // print Q
-    // print_from_GPU(Q, num_inputs, dk, batch_size);
-
-
-    // launch the matrix multiplication kernel Q * K^T
-    // dim3 attn_grid_dim(num_inputs,num_inputs);
     int d = 32;
     if( num_inputs < d) {
         d = num_inputs;
@@ -492,10 +509,6 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
 
     dim3 attn_gridDim(dg, dg, batch_size);
 
-    dim3 attn_dim(num_inputs, num_inputs, d3g);
-
-    // printf("blockDim for attn: (%d, %d, %d)\n", attn_block_dim.x, attn_block_dim.y, attn_block_dim.z);
-    // printf("gridDim for attn: (%d, %d, %d)\n", attn_gridDim.x, attn_gridDim.y, attn_gridDim.z);
 
     int blocks_per_attn = 1;
     if (num_inputs * num_inputs > 1024) {
@@ -505,68 +518,37 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     // launch the kernel to perform Q * K^T
     dim3 matmul_kernel_blockDim(num_inputs, 1024/num_inputs, 1);
     dim3 matmul_kernel_gridDim(batch_size,n_heads, blocks_per_attn);
-    // printf("blockDim for matmul_kernel_transposed_MH: (%d, %d, %d)\n", matmul_kernel_blockDim.x, matmul_kernel_blockDim.y, matmul_kernel_blockDim.z);
-    // printf("gridDim for matmul_kernel_transposed_MH: (%d, %d, %d)\n", matmul_kernel_gridDim.x, matmul_kernel_gridDim.y, matmul_kernel_gridDim.z);
+
+    CHECK(cudaEventRecord(start_cuda, 0));
     matmul_kernel_transposed_MH<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(Q, K, attn, num_inputs, head_size, n_heads, batch_size, blocks_per_attn);
     CHECK_KERNELCALL();
 
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel Attn (QxK^t) time: %f ms\n", milliseconds);
 
-    printf("Time to make attn matrix: %f seconds\n", gpu_time_used);
 
-    start = clock();
-
-    // print attn matrix
-    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
-
-    // launch the kernel to perform normalization by sqrt(dk)
     float sqrt_dk = sqrt((float) dk);
-    // printf("sqrt %f\n", sqrt_dk);
+    CHECK(cudaEventRecord(start_cuda, 0));
     normalize_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, sqrt_dk, batch_size, n_heads);
     CHECK_KERNELCALL();
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel normalize time: %f ms\n", milliseconds);
 
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time to normalize attn matrix: %f seconds\n", gpu_time_used);
-
-    start = clock();
-
-    // print attn matrix
-    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
-
-    // launch the kernel to fill the triangular upper matrix with -inf
-    // fix the grid and block dimensions
-
-    // int sq_n_tokens = num_inputs * num_inputs;
-    // int heads_per_block = 1024/(sq_n_tokens+1) + 1;
-    // int head_splited_to_n_blocks = 1;
-
-    // if (sq_n_tokens > 1024) {
-    //     head_splited_to_n_blocks = (sq_n_tokens-1)/1024 + 1;
-    // }
-
-    // dim3 masked_fill_blockDim(sq_n_tokens*heads_per_block, sq_n_tokens*heads_per_block, 1);
-    // dim3 masked_fill_gridDim(batch_size, n_heads/heads_per_block, head_splited_to_n_blocks);
-
-    // dim3 masked_fill_blockDim(num_inputs, num_inputs/, 1);
-    // dim3 masked_fill_gridDim(batch_size, n_heads, 1);
-
-
-
+    CHECK(cudaEventRecord(start_cuda, 0));
     masked_fill_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
     CHECK_KERNELCALL();
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel masked_fill time: %f ms\n", milliseconds);
 
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time to mask attn matrix: %f seconds\n", gpu_time_used);
-
-    start = clock();
-
-    // print attn matrix
-    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
 
     int vecs_per_block = num_inputs;
     if (num_inputs * num_inputs > 1024) {
@@ -577,67 +559,44 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     dim3 grid_dims(batch_size, n_heads, (num_inputs-1)/vecs_per_block + 1);
 
     int tokens_power_2_half = next_power_of_2(num_inputs)/2;
-
-    // launch the kernel for softmaxing the attn matrix
-    // softmax<<<num_inputs, num_inputs>>>(attn, num_inputs, num_inputs);
-    // softmax_mig(attn, num_inputs, batch_size, attn_gridDim, attn_block_dim);
+    
+    CHECK(cudaEventRecord(start_cuda, 0));
     softmax_kernel_v2<<<grid_dims, block_dims, vecs_per_block*num_inputs*sizeof(float)>>>(attn, num_inputs, batch_size, n_heads, vecs_per_block, tokens_power_2_half);
     CHECK_KERNELCALL();
-
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time to softmax attn matrix: %f seconds\n", gpu_time_used);
-
-    start = clock();
-
-    // print attn matrix
-    // print_from_GPU_sm(attn, num_inputs, num_inputs, batch_size, n_heads);
-
-    int total_block_n_inputs = 1;
-    int dk_per_block = num_inputs;
-    if (dk * num_inputs > 1024) {
-         
-        dk_per_block = 1024/dk;
-        total_block_n_inputs = (num_inputs - 1)/dk_per_block + 1;
-
-        
-    }
-
-    dim3 kernel_MH_bloqDim(dk, dk_per_block, 1);
-    dim3 kernel_MH_gridDim(1, total_block_n_inputs, batch_size);
-
-    // printf("blockDim for matmul_kernel_MH: (%d, %d, %d)\n", kernel_MH_bloqDim.x, kernel_MH_bloqDim.y, kernel_MH_bloqDim.z);
-    // printf("gridDim for matmul_kernel_MH: (%d, %d, %d)\n", kernel_MH_gridDim.x, kernel_MH_gridDim.y, kernel_MH_gridDim.z);
-    // launch the matrix multiplication kernel for attn * V
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel softmax time: %f ms\n", milliseconds);
+    
+    CHECK(cudaEventRecord(start_cuda, 0));    
     matmul_kernel_MH<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(attn, V, d_output, num_inputs, dk, n_heads, batch_size, head_size);
     CHECK_KERNELCALL();
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel Attn * V time: %f ms\n", milliseconds);
 
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time to make output matrix: %f seconds\n", gpu_time_used);
-
-    start = clock();
     
-    // print d_output here
-    // print_from_GPU(d_output, num_inputs, dk, batch_size);
-
-    // launch the matrix multiplication kernel for W_cproj
-    matmul_kernel_semibatched<<<gridDim, blockDim_d_q_mod>>>(d_output, d_W_cproj, d_output_2, num_inputs, dk, dk, batch_size);
+    CHECK(cudaEventRecord(start_cuda, 0));
+    matmul_kernel_semibatched<<<kernel_MH_gridDim, kernel_MH_bloqDim>>>(d_output, d_W_cproj, d_output_2, num_inputs, dk, dk, batch_size);
     CHECK_KERNELCALL();
-
-    end = clock();
-    gpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time to make projection of output matrix 2: %f seconds\n", gpu_time_used);
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_cuda, stop_cuda));
+    printf("Kernel Output Proj time: %f ms\n", milliseconds);
 
     // print d_output
     // print_from_GPU(d_output_2, num_inputs, dk, batch_size);
 
+    CHECK(cudaEventRecord(stop_cuda, 0));
+    CHECK(cudaEventSynchronize(stop_cuda));
+    milliseconds = 0;
+    CHECK(cudaEventElapsedTime(&milliseconds, start_global, stop_cuda));
+    printf("Kernel Total time: %f ms\n", milliseconds);
 
-    end = clock();
-    gpu_time_used = ((double) (end - start_global)) / CLOCKS_PER_SEC;
 
     // copy the result matrix from device to host
     float * output_array = (float *) malloc(batch_size * num_inputs * dk * sizeof(float));
@@ -656,6 +615,9 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     //         printf("\n");
     //     }
     // }
+
+    
+    write_from_GPU_to_file(d_output_2, dk, num_inputs, batch_size, "./data/debug_output.txt");
     
     // free device memory
     cudaFree(d_input);
@@ -670,5 +632,5 @@ double attention(float*** input, int num_inputs, int dk, int batch_size, int n_h
     cudaFree(K);
     cudaFree(V);
 
-    return gpu_time_used;
+    return milliseconds;
 }

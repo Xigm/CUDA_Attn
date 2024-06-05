@@ -54,6 +54,8 @@ def MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens,  n_heads, ba
     value = torch.matmul(inputs, W_v).view(batch_size, n_tokens, n_heads, dk//n_heads).transpose(1, 2)
 
     
+    # debug_info = value
+
     # Compute the attention scores
     attention_scores = torch.matmul(query, key.transpose(-2, -1))
 
@@ -67,7 +69,7 @@ def MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens,  n_heads, ba
     if len(attention_scores.shape) == 4 and mask is None:
         attention_scores = attention_scores.masked_fill(torch.tril(torch.ones(attention_scores.shape)) == 0, float('-inf'))  
     elif mask is not None:
-        attention_scores = attention_scores.masked_fill(mask == 0, float('-inf'))
+        attention_scores = attention_scores.masked_fill(mask, float('-inf'))
     else:
         attention_scores = attention_scores.masked_fill(torch.tril(torch.ones((inputs.shape[0],inputs.shape[0]))) == 0, float('-inf'))
         
@@ -77,21 +79,23 @@ def MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens,  n_heads, ba
     attention_weights = torch.softmax(attention_scores, dim=-1)
 
     # print(attention_weights)
+    # debug_info = attention_weights
 
     # Apply attention weights to the value tensor
     output = torch.matmul(attention_weights, value).transpose(1, 2).contiguous().view(batch_size, n_tokens, dk)
 
+    # debug_info = output
     # print(attention_weights)
     # print(value.transpose(1,2).view(batch_size, n_tokens, dk))
     # print(output)
 
     # Apply attention output projection
     output = torch.matmul(output, W_cproj)
-
+    debug_info = output
     # print(output)
 
     # Print the result
-    return output
+    return output, debug_info
 
 
 def gpu_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, mask):
