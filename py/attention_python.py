@@ -55,6 +55,7 @@ def MH_self_attention(inputs, W_q, W_k, W_v, W_cproj, dk, n_tokens,  n_heads, ba
 
     
     # debug_info = value
+    # print(key.transpose(-2, -1))
 
     # Compute the attention scores
     attention_scores = torch.matmul(query, key.transpose(-2, -1))

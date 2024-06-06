@@ -5,7 +5,7 @@ import os
 import time
 
 FILES_COMPILE = [ 
-                  'main_MHA_cublas.cu',
+                  'main_MHA_cubla.cu',
                 ]
 
 C_PATH = "./c/"
@@ -14,11 +14,11 @@ CU_PATH = "./cuda/"
 # add path to the files
 FILES_COMPILE = [C_PATH + file if file.endswith('.c') else CU_PATH + file for file in FILES_COMPILE ]
 
-output_file = "./bin/main_MHA_cublas"
-data_input = "./data/inputs_MHA_cublas.txt"
-data_output = "./data/outputs_MHA_cublas.txt"
-nsys_profile = "./results/profile_MHA"
-extra_info =  "_cublas"
+output_file = "./bin/main_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
+data_input = "./data/inputs_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
+data_output = "./data/outputs_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
+nsys_profile = "./results/profile_MHA_" + FILES_COMPILE[0][-8:-3]
+extra_info =  "_tokens_1024"
 
 # dk = 32*2 
 # n_tokens = 32*1
@@ -26,10 +26,10 @@ extra_info =  "_cublas"
 # gpt2 sizes : 768, 1024, 1200, 1600
 # max dk now is 1024
 dk = 120
-n_tokens = 128
+n_tokens = 120
 n_heads = 12
 head_dim = dk // n_heads
-batch_size = 4
+batch_size = 2
 
 torch.manual_seed(2026)
 
@@ -83,17 +83,17 @@ with torch.no_grad():
 time_taken = time.time() - time_start
 
 # Send the input tensors to the GPU 
-inputs_c = inputs.cuda()
-W_q_c = W_q.cuda()
-W_k_c = W_k.cuda()
-W_v_c = W_v.cuda()
-W_cproj_c = W_cproj.cuda()
-mask = torch.tril(torch.ones((batch_size, n_heads, n_tokens, n_tokens), device = "cuda")) == 0
+# inputs_c = inputs.cuda()
+# W_q_c = W_q.cuda()
+# W_k_c = W_k.cuda()
+# W_v_c = W_v.cuda()
+# W_cproj_c = W_cproj.cuda()
+# mask = torch.tril(torch.ones((batch_size, n_heads, n_tokens, n_tokens), device = "cuda")) == 0
 
-time_start = time.time()
-with torch.no_grad():
-    output_py_gpu, _ = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
-time_taken_gpu = time.time() - time_start
+# time_start = time.time()
+# with torch.no_grad():
+#     output_py_gpu, _ = MH_self_attention(inputs_c, W_q_c, W_k_c, W_v_c, W_cproj_c, dk, n_tokens, n_heads, batch_size, mask = mask)
+# time_taken_gpu = time.time() - time_start
 
 warning_supression = " -diag-suppress 549"
 # warning_supression = ""
@@ -104,6 +104,7 @@ os.system(command)
 # run the compiled program
 os.system(str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk) + ' ' + str(batch_size) + ' ' + str(n_heads))
 # os.system("nsys profile " + " -o " + str(nsys_profile) + " "+  str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk) + ' ' + str(batch_size) + ' ' + str(n_heads))
+
 os.system("ncu --set roofline -o " + str(nsys_profile)+extra_info + " -f "+  str(output_file) +' ' + data_input + ' ' + data_output + ' '+ str(n_tokens)  + ' ' + str(dk) + ' ' + str(batch_size) + ' ' + str(n_heads))
 
 output_c, time_taken, time_taken_kernel = readfromfile(data_output, dk, n_tokens, batch_size)
@@ -112,7 +113,7 @@ output_debug_c = read_matrix_from_file("./data/debug_output.txt", n_tokens, dk, 
 
 
 print("Time taken by python code: ", time_taken*1000, "ms")
-print("Time taken by py-cuda code: ", time_taken_gpu*1000, "ms")
+# print("Time taken by py-cuda code: ", time_taken_gpu*1000, "ms")
 print("Kernel time taken: ", time_taken_kernel, "ms")
 
 # compare the results if output_py and output_c are the same and print true if they are
@@ -125,11 +126,11 @@ else:
 tolerance = (output_py - output_c).abs().max().item()
 print("Tolerance: ", tolerance)
 
-tolerance = (output_py - output_py_gpu.cpu()).abs().max().item()
-print("Tolerance GPU - py: ", tolerance)
+# tolerance = (output_py - output_py_gpu.cpu()).abs().max().item()
+# print("Tolerance GPU - py: ", tolerance)
 
-tolerance = (output_py_gpu.cpu() - output_c).abs().max().item()
-print("Tolerance GPU - c: ", tolerance)
+# tolerance = (output_py_gpu.cpu() - output_c).abs().max().item()
+# print("Tolerance GPU - c: ", tolerance)
 
 tolerance_debug = (debug_info - output_debug_c).abs().max().item()
 print("Tolerance debug: ", tolerance_debug)
