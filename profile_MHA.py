@@ -5,7 +5,7 @@ import os
 import time
 
 FILES_COMPILE = [ 
-                  'main_MHA_cubla.cu',
+                  'main_MHA_tiles.cu',
                 ]
 
 C_PATH = "./c/"
@@ -18,7 +18,7 @@ output_file = "./bin/main_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
 data_input = "./data/inputs_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
 data_output = "./data/outputs_MHA_" + FILES_COMPILE[0][-8:-3] + ".txt"
 nsys_profile = "./results/profile_MHA_" + FILES_COMPILE[0][-8:-3]
-extra_info =  "_tokens_1024"
+extra_info =  ""
 
 # dk = 32*2 
 # n_tokens = 32*1
