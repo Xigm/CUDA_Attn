@@ -23,8 +23,8 @@ data_output = "./data/outputs_MHA.txt"
 # n_heads = 16
 # gpt2 sizes : 768, 1024, 1200, 1600
 # max dk now is 1024
-dk = 768
-n_tokens = 128
+dk = 1200
+n_tokens = 1024
 n_heads = 12
 head_dim = dk // n_heads
 batch_size = 4

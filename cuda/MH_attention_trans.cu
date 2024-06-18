@@ -632,7 +632,7 @@ float attention(float*** input, int num_inputs, int dk, int batch_size, int n_he
     CHECK(cudaEventRecord(start_cuda, 0));
     organiseMHatomic<<<kernel_attn_gridDim, kernel_attn_blockDim>>>(Q, Q_mh, num_inputs, dk, n_heads, batch_size, head_size);
     organiseMHatomic<<<kernel_attn_gridDim, kernel_attn_blockDim>>>(K, K_mh, num_inputs, dk, n_heads, batch_size, head_size);
-    organiseMHatomic<<<kernel_attn_gridDim, kernel_attn_blockDim>>>(V, V_mh, num_inputs, dk, n_heads, batch_size, head_size);
+    // organiseMHatomic<<<kernel_attn_gridDim, kernel_attn_blockDim>>>(V, V_mh, num_inputs, dk, n_heads, batch_size, head_size);
     CHECK_KERNELCALL();
     CHECK(cudaEventRecord(stop_cuda, 0));
     CHECK(cudaEventSynchronize(stop_cuda));
@@ -645,8 +645,10 @@ float attention(float*** input, int num_inputs, int dk, int batch_size, int n_he
     // print_from_GPU_sm(K_mh, num_inputs, head_size, batch_size, n_heads);
 
     // launch the kernel to perform Q * K^T
-    dim3 matmul_kernel_blockDim(num_inputs, 1024/num_inputs, 1);
-    dim3 matmul_kernel_gridDim(batch_size,n_heads, blocks_per_attn);
+
+
+    dim3 atomics_kernel_blockDim(num_inputs, 1024/num_inputs, 1);
+    dim3 atomics_kernel_gridDim(batch_size,n_heads, blocks_per_attn);
 
     dim3 transpose_bloqDim(1, num_inputs, 1);
     dim3 transpose_gridDim(head_size, 1, batch_size * n_heads);
@@ -677,7 +679,7 @@ float attention(float*** input, int num_inputs, int dk, int batch_size, int n_he
 
     float sqrt_dk = sqrt((float) dk);
     CHECK(cudaEventRecord(start_cuda, 0));
-    normalize_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, sqrt_dk, batch_size, n_heads);
+    normalize_atomic<<<atomics_kernel_gridDim, atomics_kernel_blockDim>>>(attn, num_inputs, num_inputs, sqrt_dk, batch_size, n_heads);
     CHECK_KERNELCALL();
     CHECK(cudaEventRecord(stop_cuda, 0));
     CHECK(cudaEventSynchronize(stop_cuda));
@@ -687,7 +689,7 @@ float attention(float*** input, int num_inputs, int dk, int batch_size, int n_he
 
 
     CHECK(cudaEventRecord(start_cuda, 0));
-    masked_fill_atomic<<<matmul_kernel_gridDim, matmul_kernel_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
+    masked_fill_atomic<<<atomics_kernel_gridDim, atomics_kernel_blockDim>>>(attn, num_inputs, num_inputs, batch_size, n_heads);
     CHECK_KERNELCALL();
     CHECK(cudaEventRecord(stop_cuda, 0));
     CHECK(cudaEventSynchronize(stop_cuda));
